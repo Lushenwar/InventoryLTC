@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { STATUS_META, daysUntil, statusOf, type StatusKey } from "@/lib/expiry";
 import type { Counts, Product } from "@/lib/types";
+import ReminderPanel from "./ReminderPanel";
 
 interface Filters {
   q: string;
@@ -28,12 +29,14 @@ function fmtDate(s: string | null): string {
 
 export default function InventoryApp({
   initialProducts,
+  allProducts,
   counts,
   locations,
   today,
   filters,
 }: {
   initialProducts: Product[];
+  allProducts: Product[];
   counts: Counts;
   locations: string[];
   today: string;
@@ -221,6 +224,8 @@ export default function InventoryApp({
           ))}
         </div>
 
+        <ReminderPanel products={allProducts} today={today} />
+
         <div className="toolbar">
           <div className="search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -374,7 +379,7 @@ export default function InventoryApp({
         <ReceiveModal
           initialMode={modal.mode}
           presetId={modal.presetId}
-          products={initialProducts}
+          products={allProducts}
           locations={locations}
           onClose={() => setModal({ type: "closed" })}
           onCreate={submitCreate}

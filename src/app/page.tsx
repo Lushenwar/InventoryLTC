@@ -21,13 +21,21 @@ export default async function Page({
   };
 
   const today = facilityToday();
-  const [rows, counts, locations] = await Promise.all([
+  const [rows, allProducts, counts, locations] = await Promise.all([
     fetchProducts(filters, today),
+    fetchProducts({}, today),
     fetchCounts(today),
     fetchLocations(),
   ]);
 
   return (
-    <InventoryApp initialProducts={rows} counts={counts} locations={locations} today={today} filters={filters} />
+    <InventoryApp
+      initialProducts={rows}
+      allProducts={allProducts}
+      counts={counts}
+      locations={locations}
+      today={today}
+      filters={filters}
+    />
   );
 }
