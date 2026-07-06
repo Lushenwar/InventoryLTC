@@ -1,6 +1,6 @@
 # Steward
 
-Shared inventory and expiry-tracking tool for the facility's floor supply rooms. Live at **https://inventory-ltc.vercel.app**.
+Shared inventory and expiry-tracking tool for the facility's floor supply rooms. Live at **https://stouffvilleinventory.vercel.app**.
 
 See `CLAUDE.md` for the full product definition, architecture, and build history. This file is the day-to-day "how do I actually use/run this" reference.
 
