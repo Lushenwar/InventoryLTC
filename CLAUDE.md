@@ -4,19 +4,19 @@
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║  BUILD PROGRESS                                 4/6 DONE  ║
-║  █████████████░░░░░░░░░░  MIGRATION UNDERWAY             ║
+║  BUILD PROGRESS                                 5/6 DONE  ║
+║  ████████████████░░░░░░░  MIGRATION UNDERWAY             ║
 ║  Phase 0: Data Extraction & Prototype        [DONE]      ║
 ║  Phase 1: Postgres Schema & Seed Migration   [DONE]      ║
 ║  Phase 2: Next.js App & CRUD API             [DONE]      ║
 ║  Phase 3: Expiry Engine & Reminder Dispatch  [DONE]      ║
-║  Phase 4: Auth, Roles & Audit Trail          [NEXT]      ║
-║  Phase 5: Deploy & Handoff                   [    ]      ║
+║  Phase 4: Admin Passcode Gate (descoped)     [DONE]      ║
+║  Phase 5: Deploy & Handoff                   [NEXT]      ║
 ╚══════════════════════════════════════════════════════════╝
 ```
 
 Phase: Migrating off the legacy Excel workbook
-Status: The daily cron sweep, Postgres-backed roll-up, and Resend email dispatch (no Slack) are live end-to-end: triggered the sweep manually and a real "Supply expiry reminder" email landed in the recipient's inbox, confirmed by the user. The manual copy/mailto panel also works. Next step is auth and roles, so only admins can set/override expiry and delete products, with every mutation's actor recorded in the events table.
+Status: Phase 4 was descoped by explicit user decision -- no per-user staff accounts, just a shared ADMIN_PASSCODE gating expiry-override and delete, verified working both via direct API calls and through the UI. Everything through Phase 4 is built and verified against the live Neon instance. Next step is deploying the app itself to the Vercel project (Neon, Resend, and the passcode are all already provisioned there).
 Update this as you finish each step.
 
 ## WHAT THIS FILE IS
@@ -282,12 +282,18 @@ steward/
 
 ---
 
-### PHASE 4: AUTH, ROLES & AUDIT TRAIL
+### PHASE 4: ADMIN PASSCODE GATE  ✅ DONE (descoped, by explicit user decision)
 
-**Exit Criterion:** Staff log in. Admins and general staff have different rights: only admins can set or override expiry dates and delete products. Every stock or expiry change writes an `events` row with the actor, and the per-item history is viewable.
+**Original exit criterion (superseded):** Staff log in via Clerk/Auth.js/Supabase Auth, admins vs. general staff as distinct accounts.
 
-* **Step 4A:** Add auth (Clerk, Auth.js, or Supabase Auth if the DB moves there). Gate the mutating routes.
-* **Step 4B:** Populate `updated_by` and write `events` on every mutation.
+**What shipped instead:** The user decided full per-user accounts weren't worth it for this facility ("I don't really care who uses the website... add a very very simple one for updating"). Descoped to a single shared admin passcode (`ADMIN_PASSCODE` env var, compared with a timing-safe check in `lib/admin.ts`) gating exactly the two actions the original criterion called out as admin-only:
+
+* Overriding an item's expiry date (`PATCH /api/products/[id]` requires the `x-admin-passcode` header only when `expiry` actually changes).
+* Deleting a product (`DELETE /api/products/[id]` always requires it).
+
+Receive, create, and editing name/stock/location/note stay open for regular staff, no login required. Successful admin-gated actions record `actor: "admin"` on the `events` row and `updated_by: "admin"` on the product (there's no per-user identity to record beyond that).
+
+**Explicitly accepted tradeoff:** no rate-limiting on passcode attempts. Acceptable given the low blast radius (no PHI, no financial data, no destructive automation) -- revisit if that risk profile changes.
 
 ---
 
