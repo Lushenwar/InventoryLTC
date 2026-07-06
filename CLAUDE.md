@@ -8,19 +8,19 @@ No direct commits to `main`. Every change goes: `git checkout -b <branch>` → c
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║  BUILD PROGRESS                                 5/6 DONE  ║
-║  ████████████████░░░░░░░  MIGRATION UNDERWAY             ║
+║  BUILD PROGRESS                                 6/6 DONE  ║
+║  ██████████████████████████  MIGRATION COMPLETE           ║
 ║  Phase 0: Data Extraction & Prototype        [DONE]      ║
 ║  Phase 1: Postgres Schema & Seed Migration   [DONE]      ║
 ║  Phase 2: Next.js App & CRUD API             [DONE]      ║
 ║  Phase 3: Expiry Engine & Reminder Dispatch  [DONE]      ║
 ║  Phase 4: Admin Passcode Gate (descoped)     [DONE]      ║
-║  Phase 5: Deploy & Handoff                   [NEXT]      ║
+║  Phase 5: Deploy & Handoff                   [DONE]      ║
 ╚══════════════════════════════════════════════════════════╝
 ```
 
-Phase: Migrating off the legacy Excel workbook
-Status: Phase 4 was descoped by explicit user decision -- no per-user staff accounts, just a shared ADMIN_PASSCODE gating expiry-override and delete, verified working both via direct API calls and through the UI. Everything through Phase 4 is built and verified against the live Neon instance. Next step is deploying the app itself to the Vercel project (Neon, Resend, and the passcode are all already provisioned there).
+Phase: Migration complete
+Status: Steward is live at https://inventory-ltc.vercel.app. All 7 PRs merged into main; caught and fixed a real deployment bug along the way (the Vercel project's framework preset was stuck on "Other" from before Next.js existed in this repo, so `next build` never ran and the site 404'd -- fixed by setting the project's framework to "nextjs" via the Vercel API, then redeployed). Verified end-to-end against the live production URL, not just locally: create/receive/edit/delete all round-tripped correctly, search hit real SQL, and the admin passcode gate worked identically to local. Test data cleaned up afterward -- 377 rows.
 Update this as you finish each step.
 
 ## WHAT THIS FILE IS
@@ -301,9 +301,13 @@ Receive, create, and editing name/stock/location/note stay open for regular staf
 
 ---
 
-### PHASE 5: DEPLOY & HANDOFF
+### PHASE 5: DEPLOY & HANDOFF  ✅ DONE
 
 **Exit Criterion:** The app is deployed on Vercel with all secrets env-bound, run docs are written, and a facility admin can add a product, receive stock, set an expiry, and receive a reminder without a developer in the loop.
+
+Live at https://inventory-ltc.vercel.app. `README.md` has the day-to-day run docs (using it, admin actions, local dev, deploying, env vars). All secrets (`DATABASE_URL`, `RESEND_API_KEY`, `REMINDER_EMAIL_FROM`, `REMINDER_EMAIL_TO`, `CRON_SECRET`, `ADMIN_PASSCODE`) are bound in the Vercel project's Production environment.
+
+**Bug found and fixed during deploy:** the Vercel project's framework preset was stuck on "Other" (set back when this repo only had the HTML prototype, before Next.js existed here), so `vercel --prod` skipped `next build` entirely and served a static-file 404. Fixed by `PATCH`ing the project's `framework` field to `"nextjs"` via the Vercel REST API, then redeploying -- confirmed via the build log actually showing `next build` run this time, not a `0ms` static build.
 
 ---
 
