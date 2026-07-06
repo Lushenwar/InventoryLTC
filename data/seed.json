@@ -2083,11 +2083,11 @@
     "code": "6572-1751-4",
     "name": "Lotion Vaseline DRY SKIN REPAIR 600ML 4bt/BX",
     "uom": "EA",
-    "stock": -101,
+    "stock": 0,
     "location": "52 Equipment Storage",
     "expiry": null,
     "needsExpiry": false,
-    "note": ""
+    "note": "legacy sheet had stock -101; verify actual count"
   },
   {
     "id": 191,
