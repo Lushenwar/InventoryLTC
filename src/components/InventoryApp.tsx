@@ -18,7 +18,10 @@ type ModalState =
   | { type: "closed" }
   | { type: "edit"; product: Product; focusExpiry?: boolean }
   | { type: "delete"; product: Product }
-  | { type: "receive"; mode: "existing" | "new"; presetId?: number };
+  | { type: "receive"; mode: "existing" | "new"; presetId?: number }
+  | { type: "admin" };
+
+const ADMIN_SESSION_KEY = "steward_admin_passcode";
 
 function fmtDate(s: string | null): string {
   if (!s) return "";
@@ -47,7 +50,18 @@ export default function InventoryApp({
   const [modal, setModal] = useState<ModalState>({ type: "closed" });
   const [toast, setToast] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState(filters.q);
+  const [adminPasscode, setAdminPasscodeState] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setAdminPasscodeState(sessionStorage.getItem(ADMIN_SESSION_KEY));
+  }, []);
+
+  function setAdminPasscode(code: string | null) {
+    setAdminPasscodeState(code);
+    if (code) sessionStorage.setItem(ADMIN_SESSION_KEY, code);
+    else sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  }
 
   useEffect(() => {
     const header = document.querySelector("header.app");
@@ -205,6 +219,13 @@ export default function InventoryApp({
           </button>
           <button className="btn primary" onClick={() => setModal({ type: "receive", mode: "existing" })}>
             Receive supply
+          </button>
+          <button
+            className="btn"
+            title={adminPasscode ? "Admin mode unlocked -- click to lock" : "Unlock admin actions (set expiry, delete)"}
+            onClick={() => (adminPasscode ? setAdminPasscode(null) : setModal({ type: "admin" }))}
+          >
+            {adminPasscode ? "Admin ✓" : "Admin"}
           </button>
         </div>
       </header>
@@ -365,6 +386,7 @@ export default function InventoryApp({
           product={modal.product}
           focusExpiry={modal.focusExpiry}
           locations={locations}
+          unlockedPasscode={adminPasscode}
           onClose={() => setModal({ type: "closed" })}
           onSave={(payload, passcode) => submitEdit(modal.product.id, payload, passcode)}
         />
@@ -372,6 +394,7 @@ export default function InventoryApp({
       {modal.type === "delete" && (
         <DeleteModal
           product={modal.product}
+          unlockedPasscode={adminPasscode}
           onClose={() => setModal({ type: "closed" })}
           onConfirm={(passcode) => submitDelete(modal.product.id, modal.product.name, passcode)}
         />
@@ -385,6 +408,16 @@ export default function InventoryApp({
           onClose={() => setModal({ type: "closed" })}
           onCreate={submitCreate}
           onReceive={submitReceive}
+        />
+      )}
+      {modal.type === "admin" && (
+        <AdminUnlockModal
+          onClose={() => setModal({ type: "closed" })}
+          onUnlock={(code) => {
+            setAdminPasscode(code);
+            setModal({ type: "closed" });
+            showToast("Admin mode unlocked");
+          }}
         />
       )}
 
@@ -429,12 +462,14 @@ function EditModal({
   product,
   focusExpiry,
   locations,
+  unlockedPasscode,
   onClose,
   onSave,
 }: {
   product: Product;
   focusExpiry?: boolean;
   locations: string[];
+  unlockedPasscode: string | null;
   onClose: () => void;
   onSave: (payload: Record<string, unknown>, passcode: string) => void;
 }) {
@@ -482,7 +517,7 @@ function EditModal({
           <label>Expiry date</label>
           <input ref={expRef} type="date" value={expiry} autoFocus={focusExpiry} onChange={(e) => setExpiry(e.target.value)} />
         </div>
-        {expiryChanged && (
+        {expiryChanged && !unlockedPasscode && (
           <div className="field">
             <label>Admin passcode (required to change expiry)</label>
             <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} placeholder="Enter admin passcode" />
@@ -513,7 +548,7 @@ function EditModal({
                 needsExpiry,
                 note: note.trim(),
               },
-              passcode,
+              unlockedPasscode ?? passcode,
             )
           }
         >
@@ -524,7 +559,17 @@ function EditModal({
   );
 }
 
-function DeleteModal({ product, onClose, onConfirm }: { product: Product; onClose: () => void; onConfirm: (passcode: string) => void }) {
+function DeleteModal({
+  product,
+  unlockedPasscode,
+  onClose,
+  onConfirm,
+}: {
+  product: Product;
+  unlockedPasscode: string | null;
+  onClose: () => void;
+  onConfirm: (passcode: string) => void;
+}) {
   const [passcode, setPasscode] = useState("");
   return (
     <Overlay onClose={onClose}>
@@ -541,14 +586,20 @@ function DeleteModal({ product, onClose, onConfirm }: { product: Product; onClos
         <p style={{ margin: "4px 0 8px" }}>
           Remove <b>{product.name || "this item"}</b> {product.code ? `(${product.code})` : ""} from {product.location}?
         </p>
-        <div className="field">
-          <label>Admin passcode</label>
-          <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} placeholder="Enter admin passcode" />
-        </div>
+        {!unlockedPasscode && (
+          <div className="field">
+            <label>Admin passcode</label>
+            <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} placeholder="Enter admin passcode" />
+          </div>
+        )}
       </div>
       <div className="mfoot">
         <button className="btn" onClick={onClose}>Keep it</button>
-        <button className="btn" style={{ background: "var(--expired)", borderColor: "var(--expired)", color: "#fff" }} onClick={() => onConfirm(passcode)}>
+        <button
+          className="btn"
+          style={{ background: "var(--expired)", borderColor: "var(--expired)", color: "#fff" }}
+          onClick={() => onConfirm(unlockedPasscode ?? passcode)}
+        >
           Delete
         </button>
       </div>
@@ -671,6 +722,64 @@ function ReceiveModal({
           }}
         >
           Receive
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
+function AdminUnlockModal({ onClose, onUnlock }: { onClose: () => void; onUnlock: (code: string) => void }) {
+  const [passcode, setPasscode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function submit() {
+    setChecking(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passcode }),
+      });
+      const body = await res.json();
+      if (body.ok) onUnlock(passcode);
+      else setError("Wrong passcode");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="mh">
+        <div className="ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" />
+          </svg>
+        </div>
+        <div><h2>Unlock admin mode</h2><p>Needed to override an expiry date or delete a product</p></div>
+        <button className="x" onClick={onClose}>×</button>
+      </div>
+      <div className="mbody">
+        <div className="field">
+          <label>Admin passcode</label>
+          <input
+            type="password"
+            value={passcode}
+            autoFocus
+            onChange={(e) => setPasscode(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !checking && submit()}
+            placeholder="Enter admin passcode"
+          />
+        </div>
+        {error && <div className="hint" style={{ color: "var(--expired)" }}>{error}</div>}
+        <div className="hint">Stays unlocked for this browser tab until you lock it again or close the tab.</div>
+      </div>
+      <div className="mfoot">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" onClick={submit} disabled={checking || !passcode}>
+          {checking ? "Checking…" : "Unlock"}
         </button>
       </div>
     </Overlay>
