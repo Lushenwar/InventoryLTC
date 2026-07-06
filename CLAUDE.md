@@ -4,11 +4,11 @@
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║  BUILD PROGRESS                                 1/6 DONE  ║
-║  ████░░░░░░░░░░░░░░░░░░░░  MIGRATION UNDERWAY             ║
+║  BUILD PROGRESS                                 2/6 DONE  ║
+║  ███████░░░░░░░░░░░░░░░░░  MIGRATION UNDERWAY             ║
 ║  Phase 0: Data Extraction & Prototype        [DONE]      ║
-║  Phase 1: Postgres Schema & Seed Migration   [NEXT]      ║
-║  Phase 2: Next.js App & CRUD API             [    ]      ║
+║  Phase 1: Postgres Schema & Seed Migration   [DONE]      ║
+║  Phase 2: Next.js App & CRUD API             [NEXT]      ║
 ║  Phase 3: Expiry Engine & Reminder Dispatch  [    ]      ║
 ║  Phase 4: Auth, Roles & Audit Trail          [    ]      ║
 ║  Phase 5: Deploy & Handoff                   [    ]      ║
@@ -16,7 +16,7 @@
 ```
 
 Phase: Migrating off the legacy Excel workbook
-Status: The messy 11-tab "Floor Supply Form" has been parsed into 377 clean product records, and a single-file HTML prototype proves the full loop (receive, track, flag, remind). Next step is a real Next.js + Neon Postgres build so the tool is shared across the facility instead of trapped in one browser.
+Status: Neon is provisioned, the products/events schema is live, and all 377 seed rows are loaded (idempotent re-seeds verified: 0 inserted / 377 updated on a clean re-run). One legacy row had a negative stock count (-101) that the stock >= 0 check constraint caught; floored to 0 and flagged in its note for a human to verify. Next step is the Next.js app and CRUD API reading from and writing to this database instead of the prototype's localStorage.
 Update this as you finish each step.
 
 ## WHAT THIS FILE IS
