@@ -8,19 +8,19 @@ No direct commits to `main`. Every change goes: `git checkout -b <branch>` → c
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║  BUILD PROGRESS                                 2/6 DONE  ║
-║  ███████░░░░░░░░░░░░░░░░░  MIGRATION UNDERWAY             ║
+║  BUILD PROGRESS                                 4/6 DONE  ║
+║  █████████████░░░░░░░░░░  MIGRATION UNDERWAY             ║
 ║  Phase 0: Data Extraction & Prototype        [DONE]      ║
 ║  Phase 1: Postgres Schema & Seed Migration   [DONE]      ║
-║  Phase 2: Next.js App & CRUD API             [NEXT]      ║
-║  Phase 3: Expiry Engine & Reminder Dispatch  [    ]      ║
-║  Phase 4: Auth, Roles & Audit Trail          [    ]      ║
+║  Phase 2: Next.js App & CRUD API             [DONE]      ║
+║  Phase 3: Expiry Engine & Reminder Dispatch  [DONE]      ║
+║  Phase 4: Auth, Roles & Audit Trail          [NEXT]      ║
 ║  Phase 5: Deploy & Handoff                   [    ]      ║
 ╚══════════════════════════════════════════════════════════╝
 ```
 
 Phase: Migrating off the legacy Excel workbook
-Status: Neon is provisioned, the products/events schema is live, and all 377 seed rows are loaded (idempotent re-seeds verified: 0 inserted / 377 updated on a clean re-run). One legacy row had a negative stock count (-101) that the stock >= 0 check constraint caught; floored to 0 and flagged in its note for a human to verify. Next step is the Next.js app and CRUD API reading from and writing to this database instead of the prototype's localStorage.
+Status: The daily cron sweep, Postgres-backed roll-up, and Resend email dispatch (no Slack) are live end-to-end: triggered the sweep manually and a real "Supply expiry reminder" email landed in the recipient's inbox, confirmed by the user. The manual copy/mailto panel also works. Next step is auth and roles, so only admins can set/override expiry and delete products, with every mutation's actor recorded in the events table.
 Update this as you finish each step.
 
 ## WHAT THIS FILE IS
