@@ -114,11 +114,13 @@
 
   /* ---- table ---- */
   .tablewrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;
-    box-shadow:var(--shadow);overflow:hidden}
+    box-shadow:var(--shadow)}
+  thead th:first-child{border-top-left-radius:12px}
+  thead th:last-child{border-top-right-radius:12px}
   table{width:100%;border-collapse:collapse}
   thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
     color:var(--muted);font-weight:650;padding:11px 14px;border-bottom:1px solid var(--line);
-    background:var(--surface-2);position:sticky;top:63px;z-index:5;white-space:nowrap;cursor:pointer;user-select:none}
+    background:var(--surface-2);position:sticky;top:var(--hdr-h,63px);z-index:5;white-space:nowrap;cursor:pointer;user-select:none}
   thead th.no-sort{cursor:default}
   thead th .arr{opacity:.4;font-size:10px;margin-left:3px}
   tbody td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -152,7 +154,8 @@
   .iconbtn svg{width:15px;height:15px}
   .iconbtn.set{color:var(--flag)}
   .tfoot{padding:11px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;
-    display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}
+    display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap;
+    border-bottom-left-radius:12px;border-bottom-right-radius:12px}
   .noresults{padding:48px 20px;text-align:center;color:var(--muted)}
   .noresults svg{width:34px;height:34px;color:var(--faint);margin-bottom:8px}
 
@@ -268,7 +271,6 @@
   </div>
 
   <div class="tablewrap">
-    <div style="overflow-x:auto">
       <table>
         <thead>
           <tr>
@@ -281,7 +283,6 @@
         </thead>
         <tbody id="tbody"></tbody>
       </table>
-    </div>
     <div id="noResults" class="noresults" style="display:none">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
       <div>No items match these filters.</div>
@@ -357,6 +358,13 @@ function toast(msg){
   t.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'+esc(msg);
   t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2200);
 }
+
+/* ---------- header height (sticky offset must match real rendered height, not a guess) ---------- */
+function syncHeaderHeight(){
+  document.documentElement.style.setProperty("--hdr-h", document.querySelector("header.app").offsetHeight+"px");
+}
+syncHeaderHeight();
+new ResizeObserver(syncHeaderHeight).observe(document.querySelector("header.app"));
 
 /* ---------- init ---------- */
 async function init(){
