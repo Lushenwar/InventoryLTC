@@ -1,5 +1,9 @@
 # CLAUDE.md — Steward
 
+## WORKFLOW: BRANCH + PR ONLY
+
+No direct commits to `main`. Every change goes: `git checkout -b <branch>` → commit → `gh pr create`. A pre-commit hook (`.git/hooks/pre-commit`) enforces this locally by rejecting commits made while on `main`.
+
 ## CURRENT STATUS
 
 ```
