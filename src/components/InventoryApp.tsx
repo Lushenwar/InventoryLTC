@@ -138,10 +138,10 @@ export default function InventoryApp({
     showToast(`Received ${payload.qty} unit(s)`);
   }
 
-  async function submitEdit(id: number, payload: Record<string, unknown>) {
+  async function submitEdit(id: number, payload: Record<string, unknown>, passcode: string) {
     const res = await fetch(`/api/products/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-admin-passcode": passcode },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -154,10 +154,11 @@ export default function InventoryApp({
     showToast("Saved changes");
   }
 
-  async function submitDelete(id: number, name: string) {
-    const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
+  async function submitDelete(id: number, name: string, passcode: string) {
+    const res = await fetch(`/api/products/${id}`, { method: "DELETE", headers: { "x-admin-passcode": passcode } });
     if (!res.ok) {
-      showToast("Could not delete product");
+      const body = await res.json().catch(() => ({}));
+      showToast(body.error || "Could not delete product");
       return;
     }
     setModal({ type: "closed" });
@@ -365,14 +366,14 @@ export default function InventoryApp({
           focusExpiry={modal.focusExpiry}
           locations={locations}
           onClose={() => setModal({ type: "closed" })}
-          onSave={(payload) => submitEdit(modal.product.id, payload)}
+          onSave={(payload, passcode) => submitEdit(modal.product.id, payload, passcode)}
         />
       )}
       {modal.type === "delete" && (
         <DeleteModal
           product={modal.product}
           onClose={() => setModal({ type: "closed" })}
-          onConfirm={() => submitDelete(modal.product.id, modal.product.name)}
+          onConfirm={(passcode) => submitDelete(modal.product.id, modal.product.name, passcode)}
         />
       )}
       {modal.type === "receive" && (
@@ -435,7 +436,7 @@ function EditModal({
   focusExpiry?: boolean;
   locations: string[];
   onClose: () => void;
-  onSave: (payload: Record<string, unknown>) => void;
+  onSave: (payload: Record<string, unknown>, passcode: string) => void;
 }) {
   const [name, setName] = useState(product.name);
   const [code, setCode] = useState(product.code ?? "");
@@ -445,7 +446,9 @@ function EditModal({
   const [expiry, setExpiry] = useState(product.expiry ?? "");
   const [needsExpiry, setNeedsExpiry] = useState(product.needsExpiry);
   const [note, setNote] = useState(product.note);
+  const [passcode, setPasscode] = useState("");
   const expRef = useRef<HTMLInputElement>(null);
+  const expiryChanged = (expiry || null) !== (product.expiry ?? null);
 
   return (
     <Overlay onClose={onClose}>
@@ -479,6 +482,12 @@ function EditModal({
           <label>Expiry date</label>
           <input ref={expRef} type="date" value={expiry} autoFocus={focusExpiry} onChange={(e) => setExpiry(e.target.value)} />
         </div>
+        {expiryChanged && (
+          <div className="field">
+            <label>Admin passcode (required to change expiry)</label>
+            <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} placeholder="Enter admin passcode" />
+          </div>
+        )}
         <label className="chk">
           <input type="checkbox" checked={needsExpiry} onChange={(e) => setNeedsExpiry(e.target.checked)} disabled={!!expiry} />
           This item needs an expiry date (flag for review)
@@ -493,16 +502,19 @@ function EditModal({
         <button
           className="btn primary"
           onClick={() =>
-            onSave({
-              name: name.trim(),
-              code: code.trim(),
-              uom: uom.trim() || "EA",
-              stock: Math.max(0, parseInt(stock) || 0),
-              location,
-              expiry: expiry || null,
-              needsExpiry,
-              note: note.trim(),
-            })
+            onSave(
+              {
+                name: name.trim(),
+                code: code.trim(),
+                uom: uom.trim() || "EA",
+                stock: Math.max(0, parseInt(stock) || 0),
+                location,
+                expiry: expiry || null,
+                needsExpiry,
+                note: note.trim(),
+              },
+              passcode,
+            )
           }
         >
           Save changes
@@ -512,7 +524,8 @@ function EditModal({
   );
 }
 
-function DeleteModal({ product, onClose, onConfirm }: { product: Product; onClose: () => void; onConfirm: () => void }) {
+function DeleteModal({ product, onClose, onConfirm }: { product: Product; onClose: () => void; onConfirm: (passcode: string) => void }) {
+  const [passcode, setPasscode] = useState("");
   return (
     <Overlay onClose={onClose}>
       <div className="mh">
@@ -528,10 +541,14 @@ function DeleteModal({ product, onClose, onConfirm }: { product: Product; onClos
         <p style={{ margin: "4px 0 8px" }}>
           Remove <b>{product.name || "this item"}</b> {product.code ? `(${product.code})` : ""} from {product.location}?
         </p>
+        <div className="field">
+          <label>Admin passcode</label>
+          <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} placeholder="Enter admin passcode" />
+        </div>
       </div>
       <div className="mfoot">
         <button className="btn" onClick={onClose}>Keep it</button>
-        <button className="btn" style={{ background: "var(--expired)", borderColor: "var(--expired)", color: "#fff" }} onClick={onConfirm}>
+        <button className="btn" style={{ background: "var(--expired)", borderColor: "var(--expired)", color: "#fff" }} onClick={() => onConfirm(passcode)}>
           Delete
         </button>
       </div>
