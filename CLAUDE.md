@@ -4,19 +4,19 @@
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║  BUILD PROGRESS                                 3/6 DONE  ║
-║  ██████████░░░░░░░░░░░░░  MIGRATION UNDERWAY             ║
+║  BUILD PROGRESS                                 4/6 DONE  ║
+║  █████████████░░░░░░░░░░  MIGRATION UNDERWAY             ║
 ║  Phase 0: Data Extraction & Prototype        [DONE]      ║
 ║  Phase 1: Postgres Schema & Seed Migration   [DONE]      ║
 ║  Phase 2: Next.js App & CRUD API             [DONE]      ║
-║  Phase 3: Expiry Engine & Reminder Dispatch  [NEXT]      ║
-║  Phase 4: Auth, Roles & Audit Trail          [    ]      ║
+║  Phase 3: Expiry Engine & Reminder Dispatch  [DONE]      ║
+║  Phase 4: Auth, Roles & Audit Trail          [NEXT]      ║
 ║  Phase 5: Deploy & Handoff                   [    ]      ║
 ╚══════════════════════════════════════════════════════════╝
 ```
 
 Phase: Migrating off the legacy Excel workbook
-Status: Phase 3's code is built and verified as far as it can be without an email account: the cron route, the Postgres-backed roll-up query, Resend-based dispatch (email only, no Slack), and the manual copy/mailto panel all work locally (cron auth guard tested against a real bypass bug, found and fixed). Exit criterion isn't met yet -- no email has actually been delivered, since that needs the user's own Resend signup (RESEND_API_KEY, a verified sender, CRON_SECRET) in Vercel, the same kind of interactive step Neon needed in Phase 1.
+Status: The daily cron sweep, Postgres-backed roll-up, and Resend email dispatch (no Slack) are live end-to-end: triggered the sweep manually and a real "Supply expiry reminder" email landed in the recipient's inbox, confirmed by the user. The manual copy/mailto panel also works. Next step is auth and roles, so only admins can set/override expiry and delete products, with every mutation's actor recorded in the events table.
 Update this as you finish each step.
 
 ## WHAT THIS FILE IS
