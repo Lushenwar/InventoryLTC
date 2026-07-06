@@ -4,19 +4,19 @@
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║  BUILD PROGRESS                                 2/6 DONE  ║
-║  ███████░░░░░░░░░░░░░░░░░  MIGRATION UNDERWAY             ║
+║  BUILD PROGRESS                                 3/6 DONE  ║
+║  ██████████░░░░░░░░░░░░░  MIGRATION UNDERWAY             ║
 ║  Phase 0: Data Extraction & Prototype        [DONE]      ║
 ║  Phase 1: Postgres Schema & Seed Migration   [DONE]      ║
-║  Phase 2: Next.js App & CRUD API             [NEXT]      ║
-║  Phase 3: Expiry Engine & Reminder Dispatch  [    ]      ║
+║  Phase 2: Next.js App & CRUD API             [DONE]      ║
+║  Phase 3: Expiry Engine & Reminder Dispatch  [NEXT]      ║
 ║  Phase 4: Auth, Roles & Audit Trail          [    ]      ║
 ║  Phase 5: Deploy & Handoff                   [    ]      ║
 ╚══════════════════════════════════════════════════════════╝
 ```
 
 Phase: Migrating off the legacy Excel workbook
-Status: Neon is provisioned, the products/events schema is live, and all 377 seed rows are loaded (idempotent re-seeds verified: 0 inserted / 377 updated on a clean re-run). One legacy row had a negative stock count (-101) that the stock >= 0 check constraint caught; floored to 0 and flagged in its note for a human to verify. Next step is the Next.js app and CRUD API reading from and writing to this database instead of the prototype's localStorage.
+Status: The dashboard, receive/create/edit/delete, and search/location/status filters all read and write Postgres directly -- localStorage is gone from the live path. Verified end-to-end against the real Neon instance (not mocked): every mutation round-tripped correctly and the events table recorded each one. Next step is the daily expiry sweep (Vercel Cron) and reminder dispatch (Slack/email), reusing the same lib/expiry.ts thresholds.
 Update this as you finish each step.
 
 ## WHAT THIS FILE IS
