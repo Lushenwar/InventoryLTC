@@ -16,7 +16,7 @@
 ```
 
 Phase: Migrating off the legacy Excel workbook
-Status: The dashboard, receive/create/edit/delete, and search/location/status filters all read and write Postgres directly -- localStorage is gone from the live path. Verified end-to-end against the real Neon instance (not mocked): every mutation round-tripped correctly and the events table recorded each one. Next step is the daily expiry sweep (Vercel Cron) and reminder dispatch (Slack/email), reusing the same lib/expiry.ts thresholds.
+Status: Phase 3's code is built and verified as far as it can be without an email account: the cron route, the Postgres-backed roll-up query, Resend-based dispatch (email only, no Slack), and the manual copy/mailto panel all work locally (cron auth guard tested against a real bypass bug, found and fixed). Exit criterion isn't met yet -- no email has actually been delivered, since that needs the user's own Resend signup (RESEND_API_KEY, a verified sender, CRON_SECRET) in Vercel, the same kind of interactive step Neon needed in Phase 1.
 Update this as you finish each step.
 
 ## WHAT THIS FILE IS
