@@ -663,7 +663,7 @@ function ReceiveModal({
               <select value={prodId} onChange={(e) => setProdId(Number(e.target.value))}>
                 {sortedProducts.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} {p.code ? `· ${p.code}` : ""} · {p.location} ({p.stock} {p.uom})
+                    {p.name} {p.code ? `· ${p.code}` : ""} · {p.location} · exp {p.expiry ?? "no date"} ({p.stock} {p.uom})
                   </option>
                 ))}
               </select>
@@ -672,7 +672,7 @@ function ReceiveModal({
               <div className="field"><label>Quantity received</label><input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} /></div>
               <div className="field"><label>New expiry (optional)</label><input type="date" value={recvExpiry} onChange={(e) => setRecvExpiry(e.target.value)} /></div>
             </div>
-            <div className="hint">Quantity is added to the current on-hand count. Setting an expiry updates the product and clears any &quot;needs date&quot; flag.</div>
+            <div className="hint">Same or blank expiry tops up this line. A <b>different</b> expiry is logged as its own lot (a separate line with its own countdown), leaving the picked line untouched.</div>
           </>
         ) : (
           <>

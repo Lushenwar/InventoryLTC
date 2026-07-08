@@ -6,7 +6,7 @@ See `CLAUDE.md` for the full product definition, architecture, and build history
 
 ## Using it (staff)
 
-- **Receive supply**: top up an existing product's count, optionally setting its expiry off the delivery label.
+- **Receive supply**: top up an existing product's count, optionally setting its expiry off the delivery label. If the delivery has a **different** expiry than the line you pick, it's logged as its own lot — a separate line with its own countdown — so mixed-expiry stock never gets flattened into one date. A matching or blank date just adds to the line you picked.
 - **New product**: log something not already in the catalog.
 - **Search / location / status filters**: all query the live database directly, not a cached list.
 - **Expiry reminders panel**: pick a window (30/60/180 days), copy the message or open it in your email client.
@@ -39,7 +39,8 @@ npm run dev
 ```bash
 npm run db:generate   # after editing drizzle/schema.ts
 npm run db:migrate    # apply migrations
-npm run db:seed       # idempotent -- safe to re-run, matches on (code, name, location)
+npm run db:seed       # idempotent -- safe to re-run, matches on (code, name, location, expiry)
+npx tsx scripts/split_lots.ts   # one-off, idempotent: splits legacy note-encoded multi-lot rows into per-lot rows
 ```
 
 ## Deploying
