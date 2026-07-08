@@ -22,7 +22,7 @@ Overriding an expiry date or deleting a product needs the shared admin passcode.
 A Vercel Cron job (`vercel.json`) runs the expiry sweep daily at 13:00 UTC. It sends **two separate emails** via Resend (grouped by location), neither of them daily:
 
 - **Expired alert** — sent only on days when something has newly expired. It lists the newly-expired items plus a summary of everything still expired. Each item is emailed once (tracked by the `expired_notified` flag), so you don't get the same item every day. Receiving new stock with a new expiry date, or an admin changing the date, resets the flag so a re-dated item can alert again when it next expires.
-- **Expiring-soon digest** — sent once a month (on the 1st) listing everything within 30 days of expiring.
+- **Expiring-soon digest** — sent weekly (Mondays) listing everything within 30 days of expiring. Weekly rather than monthly so an item entering the 30-day window is surfaced within a week, not up to a month later.
 
 Missing-date and out-of-stock items are **not** emailed; they stay visible in the in-app Reminder panel. No Slack integration — email only.
 

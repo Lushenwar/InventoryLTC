@@ -7,8 +7,10 @@ import { facilityToday } from "@/lib/expiry";
 //   1. EXPIRED alert -- fires only when something has newly expired since the last
 //      run; lists the newly-expired items plus a summary of everything still expired,
 //      then marks them so the same item is never emailed twice.
-//   2. EXPIRING digest -- a monthly roundup of everything within 30 days, sent on the
-//      1st of the month only. ponytail: date check instead of a second cron entry.
+//   2. EXPIRING digest -- a weekly roundup of everything within 30 days, sent Mondays
+//      only. Weekly not monthly: a 30-day horizon needs more than one look a month, or
+//      an item entering the window just after a send could sit ~4 weeks before it shows.
+//      ponytail: day-of-week check instead of a second cron entry.
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
@@ -31,8 +33,8 @@ export async function GET(req: NextRequest) {
     expiredSent = newlyExpired.length;
   }
 
-  // 2. Expiring digest (monthly, 1st of the month)
-  if (today.endsWith("-01")) {
+  // 2. Expiring digest (weekly, Mondays). UTC on a date-only string -> no TZ drift.
+  if (new Date(today + "T00:00:00Z").getUTCDay() === 1) {
     const expiring = await getExpiring(today, 30);
     if (expiring.length) {
       const subject = `${expiring.length} supply item(s) expiring within 30 days`;
