@@ -109,7 +109,7 @@ Steward keeps the read path, the write path, and the scheduled reminder path cle
 ### 1. App (Next.js, App Router)
 
 * **Server components** for reads, rendering the inventory and dashboard straight from the database.
-* **Route handlers / server actions** for every write: receive, create, edit, set-expiry, delete. Each write is atomic.
+* **Route handlers / server actions** for every write: receive, create, edit, set-expiry, remove-stock, delete. Each write is atomic (`stock = stock ± :qty`, never read-modify-write). Removing stock (used / wasted / expired-pulled / count fix) is open to staff and logs an `adjust` event with a free-text reason; a per-item **History** view reads that `events` log back.
 * **Shared status module** (`lib/expiry.ts`) computes an item's expiry state. This is the only place thresholds are defined.
 
 ### 2. Data (Neon Postgres)
@@ -169,8 +169,9 @@ CREATE TABLE events (
   id          BIGSERIAL PRIMARY KEY,
   product_id  BIGINT REFERENCES products(id) ON DELETE SET NULL,
   kind        TEXT NOT NULL,          -- 'create' | 'receive' | 'adjust' | 'set_expiry' | 'delete'
-  qty_delta   INTEGER,               -- for receive / adjust
+  qty_delta   INTEGER,               -- for receive / adjust (negative when stock removed)
   expiry_set  DATE,                  -- for set_expiry
+  note        TEXT,                  -- free-text reason, e.g. why stock was removed
   actor       TEXT,                  -- who did it (once auth lands)
   at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );

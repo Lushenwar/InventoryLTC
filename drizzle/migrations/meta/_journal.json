@@ -15,6 +15,13 @@
       "when": 1783517229990,
       "tag": "0001_oval_lenny_balinger",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783520597835,
+      "tag": "0002_fancy_jean_grey",
+      "breakpoints": true
     }
   ]
 }

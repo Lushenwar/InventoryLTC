@@ -29,6 +29,7 @@ export const events = pgTable("events", {
   kind: text("kind").notNull(),
   qtyDelta: integer("qty_delta"),
   expirySet: date("expiry_set"),
+  note: text("note"),          // free-text reason, e.g. why stock was removed ("used", "wasted")
   actor: text("actor"),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
 });
