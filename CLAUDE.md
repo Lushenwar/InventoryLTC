@@ -109,18 +109,30 @@ Steward keeps the read path, the write path, and the scheduled reminder path cle
 ### 1. App (Next.js, App Router)
 
 * **Server components** for reads, rendering the inventory and dashboard straight from the database.
-* **Route handlers / server actions** for every write: receive, create, edit, set-expiry, delete. Each write is atomic.
+* **Route handlers / server actions** for every write: receive, create, edit, set-expiry, remove-stock, delete. Each write is atomic (`stock = stock ± :qty`, never read-modify-write). Removing stock (used / wasted / expired-pulled / count fix) is open to staff and logs an `adjust` event with a free-text reason; a per-item **History** view reads that `events` log back.
 * **Shared status module** (`lib/expiry.ts`) computes an item's expiry state. This is the only place thresholds are defined.
 
 ### 2. Data (Neon Postgres)
 
-* **`products`** holds the live inventory. One row per product per location.
+* **`products`** holds the live inventory. One row per product per location **per expiry lot** — a product with stock under two different expiry dates is two rows sharing `(code, name, location)`. (Originally one row per product per location; split into lots on 2026-07-08 so mixed-expiry stock isn't flattened to a single date. See the receive rules and Phase 3 below.)
 * **`events`** is an append-only log of every stock or expiry change, for reconciliation and (once auth lands) an audit trail.
 
 ### 3. Reminder path (Vercel Cron + Dispatch)
 
-* A daily cron hits an internal endpoint that runs the expiry sweep against the database and builds the roll-up.
-* Dispatch sends the roll-up to a Slack Incoming Webhook or an email recipient. A copy-to-clipboard and mailto fallback stays available in the UI for manual sends.
+* A daily cron (`/api/cron/expiry-sweep`) runs the sweep. It sends **two independent emails**, neither daily (email only — the Slack path in the original plan was never built):
+  * **Expired alert** — fires only on days something newly expired. Lists the newly-expired items plus a summary of everything still expired. Notify-once per lot via `products.expired_notified`, reset whenever a row's expiry changes (receive or admin edit) so a re-dated lot can alert again.
+  * **Expiring-soon digest** — weekly (Mondays), everything within 30 days. A day-of-week check in the same daily cron, not a second cron entry.
+* Needs-date and out-of-stock are **not** emailed; they stay in the in-app Reminder panel, which also offers copy-to-clipboard / mailto for manual sends.
+
+### 4. Receive & lots
+
+Receiving is lot-aware, so mixed-expiry stock keeps separate countdowns:
+
+* Blank date, or a date matching the picked row → tops up that row.
+* A date onto an undated row → fills the date in.
+* A **different** date than an already-dated row → lands on its own sibling lot row (found or created); the picked row is untouched.
+
+`stock` is still updated atomically (`stock = stock + :qty`). The 2 legacy note-encoded multi-lot items were split into per-lot rows by `scripts/split_lots.ts` (idempotent).
 
 ---
 
@@ -140,6 +152,7 @@ CREATE TABLE products (
   location      TEXT    NOT NULL,                         -- storage room, e.g. "38 Facility Storage"
   expiry        DATE,                                    -- nullable; most legacy items have none
   needs_expiry  BOOLEAN NOT NULL DEFAULT FALSE,          -- perishable but no date on file yet
+  expired_notified BOOLEAN NOT NULL DEFAULT FALSE,       -- expired-alert already sent for this expiry; reset when expiry changes
   note          TEXT    NOT NULL DEFAULT '',
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_by    TEXT                                     -- populated once auth lands
@@ -156,8 +169,9 @@ CREATE TABLE events (
   id          BIGSERIAL PRIMARY KEY,
   product_id  BIGINT REFERENCES products(id) ON DELETE SET NULL,
   kind        TEXT NOT NULL,          -- 'create' | 'receive' | 'adjust' | 'set_expiry' | 'delete'
-  qty_delta   INTEGER,               -- for receive / adjust
+  qty_delta   INTEGER,               -- for receive / adjust (negative when stock removed)
   expiry_set  DATE,                  -- for set_expiry
+  note        TEXT,                  -- free-text reason, e.g. why stock was removed
   actor       TEXT,                  -- who did it (once auth lands)
   at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -193,7 +207,7 @@ Status rules (defined once, in `lib/expiry.ts`):
   "expiring":     [ { "id": 142, "name": "…", "location": "…", "expiry": "2026-08-31", "days_to_expiry": 56 } ],
   "needs_date":   [ { "id": 205, "name": "…", "location": "…" } ],
   "out_of_stock": [ { "id": 331, "name": "…", "location": "…" } ],
-  "channel": "slack",
+  "channel": "email",
   "recipient": "charge.nurse@facility.example"
 }
 ```
@@ -279,10 +293,12 @@ steward/
 
 ### PHASE 3: EXPIRY ENGINE & REMINDER DISPATCH
 
-**Exit Criterion:** A Vercel Cron job runs a daily sweep, and a real reminder lands in the target Slack channel or email inbox, listing expired, soon-to-expire, and missing-date items grouped by location. The manual copy and mailto fallback still works from the UI.
+**Exit Criterion:** A Vercel Cron job runs a daily sweep, and a real reminder lands in the target email inbox, listing expired, soon-to-expire, and missing-date items grouped by location. The manual copy and mailto fallback still works from the UI.
 
 * **Step 3A:** `lib/expiry.ts` is the single calculator shared by the table, the badges, the filters, and the cron. No duplicate threshold logic anywhere.
 * **Step 3B:** `dispatch.ts` formats and sends the roll-up. Secrets stay in Vercel env vars.
+
+**Post-launch revision (2026-07-08):** the single daily roll-up became **two emails** — a weekly (Mondays) expiring-soon digest and an immediate notify-once expired alert (with a still-expired summary) — so staff aren't emailed the same thing every day. Needs-date / out-of-stock dropped from email. Slack was never wired up; email (Resend) only. See "Reminder path" and "Receive & lots" under System Architecture for the current behavior.
 
 ---
 

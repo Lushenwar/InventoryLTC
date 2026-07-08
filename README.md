@@ -6,8 +6,10 @@ See `CLAUDE.md` for the full product definition, architecture, and build history
 
 ## Using it (staff)
 
-- **Receive supply**: top up an existing product's count, optionally setting its expiry off the delivery label.
+- **Receive supply**: top up an existing product's count, optionally setting its expiry off the delivery label. If the delivery has a **different** expiry than the line you pick, it's logged as its own lot — a separate line with its own countdown — so mixed-expiry stock never gets flattened into one date. A matching or blank date just adds to the line you picked.
 - **New product**: log something not already in the catalog.
+- **Remove / use stock** (minus button on a row): log stock going *out* — used, wasted, expired-and-pulled, or a count correction. Pick a quantity and reason; it's an atomic decrement (can't go below zero) and is recorded in the item's history. Open to all staff, no passcode.
+- **History** (click a product's name): the item's full timeline — created, received, removed (with reason), expiry set, etc. — read straight from the append-only `events` log.
 - **Search / location / status filters**: all query the live database directly, not a cached list.
 - **Expiry reminders panel**: pick a window (30/60/180 days), copy the message or open it in your email client.
 
@@ -19,7 +21,12 @@ Overriding an expiry date or deleting a product needs the shared admin passcode.
 
 ## Automated reminders
 
-A Vercel Cron job (`vercel.json`) runs the expiry sweep daily at 13:00 UTC and emails a roll-up (expired / expiring / missing-date / out-of-stock, grouped by location) via Resend. No Slack integration — email only.
+A Vercel Cron job (`vercel.json`) runs the expiry sweep daily at 13:00 UTC. It sends **two separate emails** via Resend (grouped by location), neither of them daily:
+
+- **Expired alert** — sent only on days when something has newly expired. It lists the newly-expired items plus a summary of everything still expired. Each item is emailed once (tracked by the `expired_notified` flag), so you don't get the same item every day. Receiving new stock with a new expiry date, or an admin changing the date, resets the flag so a re-dated item can alert again when it next expires.
+- **Expiring-soon digest** — sent weekly (Mondays) listing everything within 30 days of expiring. Weekly rather than monthly so an item entering the 30-day window is surfaced within a week, not up to a month later.
+
+Missing-date and out-of-stock items are **not** emailed; they stay visible in the in-app Reminder panel. No Slack integration — email only.
 
 ## Running it locally
 
@@ -34,8 +41,12 @@ npm run dev
 ```bash
 npm run db:generate   # after editing drizzle/schema.ts
 npm run db:migrate    # apply migrations
-npm run db:seed       # idempotent -- safe to re-run, matches on (code, name, location)
+npm run db:seed       # idempotent -- safe to re-run, matches on (code, name, location, expiry)
+npx tsx scripts/split_lots.ts   # one-off, idempotent: splits legacy note-encoded multi-lot rows into per-lot rows
 ```
+
+Migrations added since launch (apply each to prod before/with the deploy that needs it):
+`expired_notified` on `products` (two-email reminders) and `note` on `events` (stock-removal reasons).
 
 ## Deploying
 

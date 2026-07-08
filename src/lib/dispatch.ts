@@ -1,5 +1,5 @@
 import "server-only";
-import type { Rollup } from "./reminders";
+import type { ExpiringItem, ExpiredItem } from "./reminders";
 
 function groupByLocation<T extends { location: string }>(items: T[], line: (it: T) => string): string {
   const groups = new Map<string, T[]>();
@@ -13,38 +13,35 @@ function groupByLocation<T extends { location: string }>(items: T[], line: (it: 
     .join("\n\n");
 }
 
-export function buildReminderText(r: Rollup): string {
-  let msg = `Supply expiry reminder -- ${r.generatedAt}\n`;
+// Monthly digest: everything within 30 days of expiring.
+export function buildExpiringText(items: ExpiringItem[], today: string): string {
+  let msg = `Supplies expiring within 30 days -- ${today}\n`;
   msg += `Long-term care floor supply\n${"=".repeat(46)}\n\n`;
-
-  if (r.expired.length) {
-    msg += `EXPIRED -- remove / verify (${r.expired.length})\n`;
-    msg += groupByLocation(r.expired, (i) => `   - ${i.name} -- EXPIRED ${i.expiry}`);
-    msg += "\n\n";
-  }
-  if (r.expiring.length) {
-    msg += `EXPIRING WITHIN ${r.windowDays} DAYS (${r.expiring.length})\n`;
-    msg += groupByLocation(r.expiring, (i) => `   - ${i.name} -- ${i.expiry} (${i.daysToExpiry}d)`);
-    msg += "\n\n";
-  }
-  if (r.needsDate.length) {
-    msg += `MISSING EXPIRY DATE (${r.needsDate.length})\n`;
-    msg += groupByLocation(r.needsDate, (i) => `   - ${i.name}`);
-    msg += "\n\n";
-  }
-  if (r.outOfStock.length) {
-    msg += `OUT OF STOCK (${r.outOfStock.length})\n`;
-    msg += groupByLocation(r.outOfStock, (i) => `   - ${i.name}`);
-    msg += "\n\n";
-  }
-  if (!r.expired.length && !r.expiring.length && !r.needsDate.length && !r.outOfStock.length) {
-    msg += "Nothing to flag today.\n\n";
-  }
-  msg += "Please action expired and soon-to-expire items first.";
+  msg += `EXPIRING SOON (${items.length})\n`;
+  msg += groupByLocation(items, (i) => `   - ${i.name} -- ${i.expiry} (${i.daysToExpiry}d)`);
+  msg += "\n\nPlan to use or replace these before they expire.";
   return msg;
 }
 
-export async function sendReminderEmail(rollup: Rollup): Promise<{ ok: boolean; error?: string }> {
+// Fires the day items expire: what's newly expired, plus every item still expired.
+export function buildExpiredText(newly: ExpiredItem[], allExpired: ExpiredItem[], today: string): string {
+  let msg = `Supplies have EXPIRED -- ${today}\n`;
+  msg += `Long-term care floor supply\n${"=".repeat(46)}\n\n`;
+  msg += `NEWLY EXPIRED -- remove / verify (${newly.length})\n`;
+  msg += groupByLocation(newly, (i) => `   - ${i.name} -- expired ${i.expiry}`);
+  msg += "\n\n";
+
+  const olderExpired = allExpired.filter((a) => !newly.some((n) => n.id === a.id));
+  if (olderExpired.length) {
+    msg += `STILL EXPIRED from before (${olderExpired.length})\n`;
+    msg += groupByLocation(olderExpired, (i) => `   - ${i.name} -- expired ${i.expiry}`);
+    msg += "\n\n";
+  }
+  msg += "Pull expired stock and reconcile counts.";
+  return msg;
+}
+
+export async function sendEmail(subject: string, text: string): Promise<{ ok: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
   const to = process.env.REMINDER_EMAIL_TO;
   const from = process.env.REMINDER_EMAIL_FROM;
@@ -52,17 +49,10 @@ export async function sendReminderEmail(rollup: Rollup): Promise<{ ok: boolean; 
     return { ok: false, error: "Missing RESEND_API_KEY, REMINDER_EMAIL_TO, or REMINDER_EMAIL_FROM" };
   }
 
-  const subject = `Supply expiry reminder -- ${rollup.expired.length} expired, ${rollup.expiring.length} expiring soon`;
-
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from,
-      to: to.split(",").map((s) => s.trim()),
-      subject,
-      text: buildReminderText(rollup),
-    }),
+    body: JSON.stringify({ from, to: to.split(",").map((s) => s.trim()), subject, text }),
   });
 
   if (!res.ok) {

@@ -1742,11 +1742,21 @@
     "code": "365017",
     "name": "LAB BD Vacutainer UA Preservative Tube (yellow small tube)",
     "uom": "EA",
-    "stock": 34,
+    "stock": 19,
     "location": "38 Facility Storage",
     "expiry": "2026-08-31",
     "needsExpiry": false,
-    "note": "8/31/2026=19\n10/31/2026=15"
+    "note": ""
+  },
+  {
+    "code": "365017",
+    "name": "LAB BD Vacutainer UA Preservative Tube (yellow small tube)",
+    "uom": "EA",
+    "stock": 15,
+    "location": "38 Facility Storage",
+    "expiry": "2026-10-31",
+    "needsExpiry": false,
+    "note": ""
   },
   {
     "id": 160,
@@ -1786,11 +1796,21 @@
     "code": "3C0-47N",
     "name": "LAB UTM Transport & Preservation Medium For Virak Molecular Diagnostic Testing (PCR)",
     "uom": "EA",
-    "stock": 1300,
+    "stock": 1000,
     "location": "38 Facility Storage",
     "expiry": "2026-07-08",
     "needsExpiry": false,
-    "note": "7/8/2026=1000\n8/20/2026=300"
+    "note": ""
+  },
+  {
+    "code": "3C0-47N",
+    "name": "LAB UTM Transport & Preservation Medium For Virak Molecular Diagnostic Testing (PCR)",
+    "uom": "EA",
+    "stock": 300,
+    "location": "38 Facility Storage",
+    "expiry": "2026-08-20",
+    "needsExpiry": false,
+    "note": ""
   },
   {
     "id": 164,

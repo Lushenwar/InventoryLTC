@@ -19,6 +19,8 @@ type ModalState =
   | { type: "edit"; product: Product; focusExpiry?: boolean }
   | { type: "delete"; product: Product }
   | { type: "receive"; mode: "existing" | "new"; presetId?: number }
+  | { type: "remove"; product: Product }
+  | { type: "history"; product: Product }
   | { type: "admin" };
 
 const ADMIN_SESSION_KEY = "steward_admin_passcode";
@@ -150,6 +152,22 @@ export default function InventoryApp({
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast(`Received ${payload.qty} unit(s)`);
+  }
+
+  async function submitRemove(payload: { id: number; qty: number; reason: string }) {
+    const res = await fetch("/api/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      showToast(body.error || "Could not remove stock");
+      return;
+    }
+    setModal({ type: "closed" });
+    await refreshAfterMutation();
+    showToast(`Removed ${payload.qty} unit(s)`);
   }
 
   async function submitEdit(id: number, payload: Record<string, unknown>, passcode: string) {
@@ -301,8 +319,10 @@ export default function InventoryApp({
                 return (
                   <tr key={it.id}>
                     <td className="acc" style={{ borderLeftColor: statusEdge(s.key) }}>
-                      <div className="pname">{it.name || <span style={{ color: "var(--faint)" }}>Unnamed</span>}</div>
-                      <div className="pcode">{it.code || "—"}</div>
+                      <button className="pnamebtn" title="View history" onClick={() => setModal({ type: "history", product: it })}>
+                        <span className="pname">{it.name || <span style={{ color: "var(--faint)" }}>Unnamed</span>}</span>
+                        <span className="pcode">{it.code || "—"}</span>
+                      </button>
                     </td>
                     <td className="hide-md">
                       <span className="loc">
@@ -342,6 +362,16 @@ export default function InventoryApp({
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 5v14M5 12h14" />
+                          </svg>
+                        </button>
+                        <button
+                          className="iconbtn"
+                          title="Remove / use stock"
+                          disabled={stock === 0}
+                          onClick={() => setModal({ type: "remove", product: it })}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 12h14" />
                           </svg>
                         </button>
                         <button className="iconbtn" title="Edit" onClick={() => setModal({ type: "edit", product: it })}>
@@ -409,6 +439,16 @@ export default function InventoryApp({
           onCreate={submitCreate}
           onReceive={submitReceive}
         />
+      )}
+      {modal.type === "remove" && (
+        <RemoveModal
+          product={modal.product}
+          onClose={() => setModal({ type: "closed" })}
+          onRemove={(qty, reason) => submitRemove({ id: modal.product.id, qty, reason })}
+        />
+      )}
+      {modal.type === "history" && (
+        <HistoryModal product={modal.product} onClose={() => setModal({ type: "closed" })} />
       )}
       {modal.type === "admin" && (
         <AdminUnlockModal
@@ -607,6 +647,120 @@ function DeleteModal({
   );
 }
 
+function RemoveModal({
+  product,
+  onClose,
+  onRemove,
+}: {
+  product: Product;
+  onClose: () => void;
+  onRemove: (qty: number, reason: string) => void;
+}) {
+  const [qty, setQty] = useState("1");
+  const [preset, setPreset] = useState("Used");
+  const [detail, setDetail] = useState("");
+  const n = Math.min(Math.max(1, parseInt(qty) || 0), product.stock);
+  const reason = detail.trim() ? `${preset} — ${detail.trim()}` : preset;
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="mh">
+        <div className="ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14" />
+          </svg>
+        </div>
+        <div><h2>Remove stock</h2><p>{product.name} · exp {product.expiry ?? "no date"}</p></div>
+        <button className="x" onClick={onClose}>×</button>
+      </div>
+      <div className="mbody">
+        <div className="row2">
+          <div className="field"><label>Quantity to remove</label><input type="number" min={1} max={product.stock} value={qty} onChange={(e) => setQty(e.target.value)} /></div>
+          <div className="field">
+            <label>Reason</label>
+            <select value={preset} onChange={(e) => setPreset(e.target.value)}>
+              <option>Used</option>
+              <option>Wasted / damaged</option>
+              <option>Expired — pulled</option>
+              <option>Count correction</option>
+              <option>Other</option>
+            </select>
+          </div>
+        </div>
+        <div className="field"><label>Detail (optional)</label><input value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="e.g. used in Room 214" /></div>
+        <div className="hint">On hand now: <b className="num">{product.stock.toLocaleString()}</b> {product.uom}. Logged to this item&apos;s history.</div>
+      </div>
+      <div className="mfoot">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" disabled={product.stock === 0} onClick={() => onRemove(n, reason)}>Remove {n}</button>
+      </div>
+    </Overlay>
+  );
+}
+
+type EventRow = { id: number; kind: string; qtyDelta: number | null; expirySet: string | null; note: string | null; actor: string | null; at: string };
+
+function describeEvent(e: EventRow, uom: string): string {
+  switch (e.kind) {
+    case "create": return `Created${e.qtyDelta ? ` · ${e.qtyDelta} ${uom}` : ""}`;
+    case "receive": return `Received +${e.qtyDelta ?? 0}${e.expirySet ? ` · exp ${e.expirySet}` : ""}`;
+    case "adjust": return (e.qtyDelta ?? 0) < 0 ? `Removed ${e.qtyDelta}` : `Adjusted +${e.qtyDelta ?? 0}`;
+    case "set_expiry": return `Expiry set to ${e.expirySet ?? "—"}`;
+    case "delete": return "Deleted";
+    default: return e.kind;
+  }
+}
+
+function HistoryModal({ product, onClose }: { product: Product; onClose: () => void }) {
+  const [events, setEvents] = useState<EventRow[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/products/${product.id}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => alive && setEvents(d))
+      .catch(() => alive && setError(true));
+    return () => { alive = false; };
+  }, [product.id]);
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="mh">
+        <div className="ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+          </svg>
+        </div>
+        <div><h2>History</h2><p>{product.name} {product.code ? `· ${product.code}` : ""} · {product.location}</p></div>
+        <button className="x" onClick={onClose}>×</button>
+      </div>
+      <div className="mbody">
+        {!events && !error && <div className="hint">Loading…</div>}
+        {error && <div className="hint" style={{ color: "var(--expired)" }}>Could not load history.</div>}
+        {events && events.length === 0 && <div className="hint">No history recorded yet.</div>}
+        {events && events.length > 0 && (
+          <ul className="histlist">
+            {events.map((e) => (
+              <li key={e.id}>
+                <div className="histrow">
+                  <span className="histwhat">{describeEvent(e, product.uom)}</span>
+                  <span className="histwhen">{new Date(e.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+                </div>
+                {e.note && <div className="expsub">{e.note}</div>}
+                {e.actor && <div className="expsub">by {e.actor}</div>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="mfoot">
+        <button className="btn" onClick={onClose}>Close</button>
+      </div>
+    </Overlay>
+  );
+}
+
 function ReceiveModal({
   initialMode,
   presetId,
@@ -663,7 +817,7 @@ function ReceiveModal({
               <select value={prodId} onChange={(e) => setProdId(Number(e.target.value))}>
                 {sortedProducts.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} {p.code ? `· ${p.code}` : ""} · {p.location} ({p.stock} {p.uom})
+                    {p.name} {p.code ? `· ${p.code}` : ""} · {p.location} · exp {p.expiry ?? "no date"} ({p.stock} {p.uom})
                   </option>
                 ))}
               </select>
@@ -672,7 +826,7 @@ function ReceiveModal({
               <div className="field"><label>Quantity received</label><input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} /></div>
               <div className="field"><label>New expiry (optional)</label><input type="date" value={recvExpiry} onChange={(e) => setRecvExpiry(e.target.value)} /></div>
             </div>
-            <div className="hint">Quantity is added to the current on-hand count. Setting an expiry updates the product and clears any &quot;needs date&quot; flag.</div>
+            <div className="hint">Same or blank expiry tops up this line. A <b>different</b> expiry is logged as its own lot (a separate line with its own countdown), leaving the picked line untouched.</div>
           </>
         ) : (
           <>

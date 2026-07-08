@@ -18,9 +18,10 @@ type SeedItem = {
   note: string;
 };
 
-// ponytail: matches on (code, name, location) per CLAUDE.md; done as select-then-write
-// rather than ON CONFLICT because most legacy rows have a null/blank code, and Postgres
-// treats NULLs as distinct for unique-constraint conflict matching.
+// ponytail: matches on (code, name, location, expiry) -- expiry joined the key once items
+// became one row per lot, so two lots of the same product (same code/name/location, different
+// expiry) don't collapse into one on re-seed. select-then-write rather than ON CONFLICT because
+// most legacy rows have a null/blank code, and Postgres treats NULLs as distinct for conflicts.
 async function upsert(item: SeedItem) {
   const codeKey = item.code || "";
   const existing = await db
@@ -31,6 +32,7 @@ async function upsert(item: SeedItem) {
         sql`coalesce(${products.code}, '') = ${codeKey}`,
         eq(products.name, item.name),
         eq(products.location, item.location),
+        sql`coalesce(${products.expiry}::text, '') = ${item.expiry || ""}`,
       ),
     )
     .limit(1);

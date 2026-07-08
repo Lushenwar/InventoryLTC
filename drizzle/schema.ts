@@ -10,6 +10,10 @@ export const products = pgTable("products", {
   location: text("location").notNull(),
   expiry: date("expiry"),
   needsExpiry: boolean("needs_expiry").notNull().default(false),
+  // Set true once the "expired" alert has gone out for this item's current expiry
+  // date, so the daily sweep alerts once and not every day. Reset to false whenever
+  // expiry changes (receive / admin edit) so a re-dated item can alert again.
+  expiredNotified: boolean("expired_notified").notNull().default(false),
   note: text("note").notNull().default(""),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text("updated_by"),
@@ -25,6 +29,7 @@ export const events = pgTable("events", {
   kind: text("kind").notNull(),
   qtyDelta: integer("qty_delta"),
   expirySet: date("expiry_set"),
+  note: text("note"),          // free-text reason, e.g. why stock was removed ("used", "wasted")
   actor: text("actor"),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
 });
