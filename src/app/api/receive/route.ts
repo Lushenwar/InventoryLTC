@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
       .update(products)
       .set({
         stock: sql`${products.stock} + ${qty}`,
-        ...(expiry ? { expiry, needsExpiry: false } : {}),
+        ...(expiry ? { expiry, needsExpiry: false, expiredNotified: false } : {}),
         updatedAt: new Date(),
       })
       .where(eq(products.id, id))
