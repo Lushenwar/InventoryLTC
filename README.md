@@ -8,6 +8,8 @@ See `CLAUDE.md` for the full product definition, architecture, and build history
 
 - **Receive supply**: top up an existing product's count, optionally setting its expiry off the delivery label. If the delivery has a **different** expiry than the line you pick, it's logged as its own lot — a separate line with its own countdown — so mixed-expiry stock never gets flattened into one date. A matching or blank date just adds to the line you picked.
 - **New product**: log something not already in the catalog.
+- **Remove / use stock** (minus button on a row): log stock going *out* — used, wasted, expired-and-pulled, or a count correction. Pick a quantity and reason; it's an atomic decrement (can't go below zero) and is recorded in the item's history. Open to all staff, no passcode.
+- **History** (click a product's name): the item's full timeline — created, received, removed (with reason), expiry set, etc. — read straight from the append-only `events` log.
 - **Search / location / status filters**: all query the live database directly, not a cached list.
 - **Expiry reminders panel**: pick a window (30/60/180 days), copy the message or open it in your email client.
 
@@ -42,6 +44,9 @@ npm run db:migrate    # apply migrations
 npm run db:seed       # idempotent -- safe to re-run, matches on (code, name, location, expiry)
 npx tsx scripts/split_lots.ts   # one-off, idempotent: splits legacy note-encoded multi-lot rows into per-lot rows
 ```
+
+Migrations added since launch (apply each to prod before/with the deploy that needs it):
+`expired_notified` on `products` (two-email reminders) and `note` on `events` (stock-removal reasons).
 
 ## Deploying
 
