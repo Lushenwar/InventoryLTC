@@ -31,7 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const [updated] = await db
     .update(products)
-    .set({ name, code, uom, stock, location, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: expiryChanged ? "admin" : existing.updatedBy })
+    .set({ name, code, uom, stock, location, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: expiryChanged ? "admin" : existing.updatedBy, ...(expiryChanged ? { expiredNotified: false } : {}) })
     .where(eq(products.id, id))
     .returning();
 

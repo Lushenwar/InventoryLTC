@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD COLUMN "expired_notified" boolean DEFAULT false NOT NULL;

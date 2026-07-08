@@ -1,39 +1,57 @@
 import "server-only";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { asc, inArray, sql } from "drizzle-orm";
 import { db, products } from "./db";
 import { daysUntil } from "./expiry";
 
-export interface Rollup {
-  generatedAt: string;
-  windowDays: number;
-  expired: { name: string; location: string; expiry: string }[];
-  expiring: { name: string; location: string; expiry: string; daysToExpiry: number }[];
-  needsDate: { name: string; location: string }[];
-  outOfStock: { name: string; location: string }[];
+export interface ExpiringItem {
+  name: string;
+  location: string;
+  expiry: string;
+  daysToExpiry: number;
+}
+export interface ExpiredItem {
+  id: number;
+  name: string;
+  location: string;
+  expiry: string;
 }
 
-const cols = { name: products.name, location: products.location, expiry: products.expiry };
+const listCols = { name: products.name, location: products.location, expiry: products.expiry };
 
-export async function buildRollup(today: string, windowDays = 90): Promise<Rollup> {
-  const [expiredRows, expiringRows, needsDateRows, outOfStockRows] = await Promise.all([
-    db.select(cols).from(products).where(sql`${products.expiry} is not null and ${products.expiry} < ${today}`).orderBy(asc(products.location)),
-    db.select(cols).from(products)
-      .where(sql`${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + (${windowDays} || ' day')::interval)`)
-      .orderBy(asc(products.location)),
-    db.select({ name: products.name, location: products.location }).from(products)
-      .where(and(isNull(products.expiry), eq(products.needsExpiry, true)))
-      .orderBy(asc(products.location)),
-    db.select({ name: products.name, location: products.location }).from(products)
-      .where(eq(products.stock, 0))
-      .orderBy(asc(products.location)),
-  ]);
+// Everything expiring within `windowDays` (default 30) but not yet expired.
+// Used by the monthly "expiring soon" digest -- purely date-based, no state.
+export async function getExpiring(today: string, windowDays = 30): Promise<ExpiringItem[]> {
+  const rows = await db
+    .select(listCols)
+    .from(products)
+    .where(sql`${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + (${windowDays} || ' day')::interval)`)
+    .orderBy(asc(products.location));
+  return rows.map((r) => ({ name: r.name, location: r.location, expiry: r.expiry!, daysToExpiry: daysUntil(r.expiry, today)! }));
+}
 
-  return {
-    generatedAt: today,
-    windowDays,
-    expired: expiredRows.map((r) => ({ name: r.name, location: r.location, expiry: r.expiry! })),
-    expiring: expiringRows.map((r) => ({ name: r.name, location: r.location, expiry: r.expiry!, daysToExpiry: daysUntil(r.expiry, today)! })),
-    needsDate: needsDateRows,
-    outOfStock: outOfStockRows,
-  };
+// Items that are expired AND have not had an "expired" alert sent yet.
+// These are what triggers a send; empty means the daily sweep stays quiet.
+export async function getNewlyExpired(today: string): Promise<ExpiredItem[]> {
+  const rows = await db
+    .select({ id: products.id, ...listCols })
+    .from(products)
+    .where(sql`${products.expiry} is not null and ${products.expiry} < ${today} and ${products.expiredNotified} = false`)
+    .orderBy(asc(products.location));
+  return rows.map((r) => ({ id: r.id, name: r.name, location: r.location, expiry: r.expiry! }));
+}
+
+// Every currently-expired item, notified or not -- the "summary of the other
+// things that have expired as well" that rides along in the expired alert.
+export async function getAllExpired(today: string): Promise<ExpiredItem[]> {
+  const rows = await db
+    .select({ id: products.id, ...listCols })
+    .from(products)
+    .where(sql`${products.expiry} is not null and ${products.expiry} < ${today}`)
+    .orderBy(asc(products.location));
+  return rows.map((r) => ({ id: r.id, name: r.name, location: r.location, expiry: r.expiry! }));
+}
+
+export async function markExpiredNotified(ids: number[]): Promise<void> {
+  if (!ids.length) return;
+  await db.update(products).set({ expiredNotified: true }).where(inArray(products.id, ids));
 }
