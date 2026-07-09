@@ -195,7 +195,9 @@ CREATE TABLE events (
 ```
 
 Status rules (defined once, in `lib/expiry.ts`):
-`expired` = expiry in the past; `soon` = 0–30 days; `watch` = 31–90 days; `ok` = beyond 90 days; `needs_date` = no expiry but flagged; `none` = no expiry and not flagged.
+`oos` = zero on hand (checked first — see below); `expired` = expiry in the past; `soon` = 0–30 days; `watch` = 31–90 days; `ok` = beyond 90 days; `needs_date` = no expiry but flagged; `none` = no expiry and not flagged.
+
+**Zero on hand short-circuits expiry.** A `stock = 0` row means the item isn't physically here, so an expiry status is meaningless — it reads as `oos` ("Out of stock"), never expired/expiring/needs-date. This gate lives in `statusOf` and is mirrored in every expiry query (`queries.ts` filters + counts, `reminders.ts` email queries all require `stock > 0`), so out-of-stock items drop out of the badges, the chip filters, the dashboard counts, and both reminder emails. The expiry date value is kept, not nulled (receiving stock back brings the countdown with it).
 
 ### Reminder roll-up payload
 

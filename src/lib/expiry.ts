@@ -1,7 +1,7 @@
 // Single source of truth for expiry status + thresholds. The table, badges,
 // filters, and (later) the cron all read status through this file.
 
-export type StatusKey = "expired" | "soon" | "watch" | "ok" | "flag" | "none";
+export type StatusKey = "expired" | "soon" | "watch" | "ok" | "flag" | "none" | "oos";
 
 export interface StatusInfo {
   key: StatusKey;
@@ -15,6 +15,7 @@ export const STATUS_META: Record<StatusKey, { label: string; cls: string }> = {
   ok: { label: "In date", cls: "b-ok" },
   flag: { label: "Needs date", cls: "b-flag" },
   none: { label: "No expiry", cls: "b-none" },
+  oos: { label: "Out of stock", cls: "b-oos" },
 };
 
 const FACILITY_TZ = "America/Toronto"; // ponytail: single-facility hardcode; add a setting if a second location ever needs its own clock
@@ -43,7 +44,10 @@ export function daysUntil(expiry: string | null, todayStr: string): number | nul
   return toUTCDayNumber(expiry) - toUTCDayNumber(todayStr);
 }
 
-export function statusOf(expiry: string | null, needsExpiry: boolean, todayStr: string): StatusInfo {
+// Zero on hand means we don't physically have the item, so an expiry status is
+// meaningless -- it reads as "Out of stock" and drops out of expiry alerts.
+export function statusOf(expiry: string | null, needsExpiry: boolean, todayStr: string, stock = 1): StatusInfo {
+  if (stock <= 0) return { key: "oos", days: null };
   if (expiry) {
     const days = daysUntil(expiry, todayStr);
     if (days === null) return { key: "none", days: null };

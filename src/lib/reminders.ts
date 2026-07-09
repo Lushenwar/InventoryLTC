@@ -24,7 +24,7 @@ export async function getExpiring(today: string, windowDays = 30): Promise<Expir
   const rows = await db
     .select(listCols)
     .from(products)
-    .where(sql`${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + (${windowDays} || ' day')::interval)`)
+    .where(sql`${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + (${windowDays} || ' day')::interval)`)
     .orderBy(asc(products.location));
   return rows.map((r) => ({ name: r.name, location: r.location, expiry: r.expiry!, daysToExpiry: daysUntil(r.expiry, today)! }));
 }
@@ -35,7 +35,7 @@ export async function getNewlyExpired(today: string): Promise<ExpiredItem[]> {
   const rows = await db
     .select({ id: products.id, ...listCols })
     .from(products)
-    .where(sql`${products.expiry} is not null and ${products.expiry} < ${today} and ${products.expiredNotified} = false`)
+    .where(sql`${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} < ${today} and ${products.expiredNotified} = false`)
     .orderBy(asc(products.location));
   return rows.map((r) => ({ id: r.id, name: r.name, location: r.location, expiry: r.expiry! }));
 }
@@ -46,7 +46,7 @@ export async function getAllExpired(today: string): Promise<ExpiredItem[]> {
   const rows = await db
     .select({ id: products.id, ...listCols })
     .from(products)
-    .where(sql`${products.expiry} is not null and ${products.expiry} < ${today}`)
+    .where(sql`${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} < ${today}`)
     .orderBy(asc(products.location));
   return rows.map((r) => ({ id: r.id, name: r.name, location: r.location, expiry: r.expiry! }));
 }

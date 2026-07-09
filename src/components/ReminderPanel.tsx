@@ -24,9 +24,9 @@ export default function ReminderPanel({ products, today }: { products: Product[]
   const [to, setTo] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const expired = useMemo(() => products.filter((p) => { const d = daysUntil(p.expiry, today); return d !== null && d < 0; }), [products, today]);
-  const soon = useMemo(() => products.filter((p) => { const d = daysUntil(p.expiry, today); return d !== null && d >= 0 && d <= windowDays; }), [products, today, windowDays]);
-  const flagged = useMemo(() => (includeFlag ? products.filter((p) => statusOf(p.expiry, p.needsExpiry, today).key === "flag") : []), [products, today, includeFlag]);
+  const expired = useMemo(() => products.filter((p) => { const d = daysUntil(p.expiry, today); return p.stock > 0 && d !== null && d < 0; }), [products, today]);
+  const soon = useMemo(() => products.filter((p) => { const d = daysUntil(p.expiry, today); return p.stock > 0 && d !== null && d >= 0 && d <= windowDays; }), [products, today, windowDays]);
+  const flagged = useMemo(() => (includeFlag ? products.filter((p) => statusOf(p.expiry, p.needsExpiry, today, p.stock).key === "flag") : []), [products, today, includeFlag]);
   const oos = useMemo(() => (includeLow ? products.filter((p) => p.stock === 0) : []), [products, includeLow]);
 
   const summary = `${expired.length} expired · ${soon.length} expiring within ${windowDays} days` + (flagged.length ? ` · ${flagged.length} missing a date` : "");

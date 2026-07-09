@@ -313,7 +313,7 @@ export default function InventoryApp({
             </thead>
             <tbody>
               {initialProducts.map((it) => {
-                const s = statusOf(it.expiry, it.needsExpiry, today);
+                const s = statusOf(it.expiry, it.needsExpiry, today, it.stock);
                 const m = STATUS_META[s.key];
                 const stock = it.stock;
                 return (
@@ -484,12 +484,14 @@ function statusEdge(key: StatusKey): string {
     ok: "transparent",
     flag: "var(--flag)",
     none: "transparent",
+    oos: "transparent",
   };
   return edges[key];
 }
 
 function StatusCell({ status, days, expiry }: { status: StatusKey; days: number | null; expiry: string | null }) {
   const cls = `badge ${STATUS_META[status].cls}`;
+  if (status === "oos") return <span className={cls}><span className="d" />Out of stock</span>;
   if (status === "expired") return (<><span className={cls}><span className="d" />Expired</span><div className="expsub">{fmtDate(expiry)} · {Math.abs(days ?? 0)}d ago</div></>);
   if (status === "soon") return (<><span className={cls}><span className="d" />{days}d left</span><div className="expsub">{fmtDate(expiry)}</div></>);
   if (status === "watch") return (<><span className={cls}><span className="d" />{days}d left</span><div className="expsub">{fmtDate(expiry)}</div></>);
@@ -782,9 +784,20 @@ function ReceiveModal({
   const preset = presetId ? products.find((p) => p.id === presetId) : undefined;
 
   const sortedProducts = useMemo(() => [...products].sort((a, b) => a.name.localeCompare(b.name)), [products]);
-  const [prodId, setProdId] = useState<number>(preset?.id ?? sortedProducts[0]?.id ?? 0);
+  const [prodId, setProdId] = useState<number>(preset?.id ?? 0);
+  const [search, setSearch] = useState(preset?.name ?? "");
+  const [showList, setShowList] = useState(false);
   const [qty, setQty] = useState("1");
   const [recvExpiry, setRecvExpiry] = useState("");
+
+  const selected = products.find((p) => p.id === prodId);
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = q
+      ? sortedProducts.filter((p) => p.name.toLowerCase().includes(q) || (p.code ?? "").toLowerCase().includes(q))
+      : sortedProducts;
+    return list.slice(0, 20); // ponytail: cap the dropdown; typing narrows it further
+  }, [search, sortedProducts]);
 
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -812,15 +825,36 @@ function ReceiveModal({
         </div>
         {mode === "existing" ? (
           <>
-            <div className="field">
+            <div className="field combo">
               <label>Product</label>
-              <select value={prodId} onChange={(e) => setProdId(Number(e.target.value))}>
-                {sortedProducts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.code ? `· ${p.code}` : ""} · {p.location} · exp {p.expiry ?? "no date"} ({p.stock} {p.uom})
-                  </option>
-                ))}
-              </select>
+              <input
+                type="text"
+                placeholder="Search product or code…"
+                value={search}
+                onFocus={() => setShowList(true)}
+                onChange={(e) => { setSearch(e.target.value); setProdId(0); setShowList(true); }}
+              />
+              {showList && (
+                <div className="combo-list">
+                  {matches.length === 0 && <div className="combo-empty">No products match “{search}”.</div>}
+                  {matches.map((p) => (
+                    <button
+                      type="button"
+                      key={p.id}
+                      className="combo-item"
+                      onClick={() => { setProdId(p.id); setSearch(p.name); setShowList(false); }}
+                    >
+                      {p.name} {p.code ? `· ${p.code}` : ""}
+                      <span className="sub">{p.location} · exp {p.expiry ?? "no date"} · {p.stock} {p.uom} on hand</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selected && !showList && (
+                <div className="combo-sel">
+                  Selected: {selected.location} · exp {selected.expiry ?? "no date"} · {selected.stock} {selected.uom} on hand
+                </div>
+              )}
             </div>
             <div className="row2">
               <div className="field"><label>Quantity received</label><input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} /></div>
@@ -858,8 +892,10 @@ function ReceiveModal({
         <button className="btn" onClick={onClose}>Cancel</button>
         <button
           className="btn primary"
+          disabled={mode === "existing" && !prodId}
           onClick={() => {
             if (mode === "existing") {
+              if (!prodId) return;
               onReceive({ id: prodId, qty: parseInt(qty) || 0, expiry: recvExpiry || null });
             } else {
               if (!name.trim()) return;

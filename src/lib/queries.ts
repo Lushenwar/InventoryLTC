@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db, products } from "./db";
 import type { Counts, Product } from "./types";
 
@@ -12,22 +12,24 @@ export interface Filters {
 
 const SORTABLE = new Set(["name", "location", "stock", "expiry"]);
 
+// Every expiry status is scoped to in-stock rows so the chip filters match the
+// badges: a zero-on-hand item is "Out of stock", never expired/expiring/etc.
 function statusPredicate(status: string | undefined, today: string): SQL | undefined {
   switch (status) {
     case "expired":
-      return sql`${products.expiry} is not null and ${products.expiry} < ${today}`;
+      return sql`${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} < ${today}`;
     case "soon":
-      return sql`${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + interval '30 day')`;
+      return sql`${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + interval '30 day')`;
     case "watch":
-      return sql`${products.expiry} is not null and ${products.expiry} > (${today}::date + interval '30 day') and ${products.expiry} <= (${today}::date + interval '90 day')`;
+      return sql`${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} > (${today}::date + interval '30 day') and ${products.expiry} <= (${today}::date + interval '90 day')`;
     case "soon90":
-      return sql`${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + interval '90 day')`;
+      return sql`${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + interval '90 day')`;
     case "ok":
-      return sql`${products.expiry} is not null and ${products.expiry} > (${today}::date + interval '90 day')`;
+      return sql`${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} > (${today}::date + interval '90 day')`;
     case "flag":
-      return and(isNull(products.expiry), eq(products.needsExpiry, true));
+      return sql`${products.stock} > 0 and ${products.expiry} is null and ${products.needsExpiry} = true`;
     case "none":
-      return and(isNull(products.expiry), eq(products.needsExpiry, false));
+      return sql`${products.stock} > 0 and ${products.expiry} is null and ${products.needsExpiry} = false`;
     case "oos":
       return eq(products.stock, 0);
     default:
@@ -73,12 +75,12 @@ export async function fetchCounts(today: string): Promise<Counts> {
     .select({
       all: sql<number>`count(*)::int`,
       onhand: sql<number>`coalesce(sum(${products.stock}),0)::int`,
-      expired: sql<number>`count(*) filter (where ${products.expiry} is not null and ${products.expiry} < ${today})::int`,
-      soon: sql<number>`count(*) filter (where ${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + interval '30 day'))::int`,
-      watch: sql<number>`count(*) filter (where ${products.expiry} is not null and ${products.expiry} > (${today}::date + interval '30 day') and ${products.expiry} <= (${today}::date + interval '90 day'))::int`,
-      ok: sql<number>`count(*) filter (where ${products.expiry} is not null and ${products.expiry} > (${today}::date + interval '90 day'))::int`,
-      flag: sql<number>`count(*) filter (where ${products.expiry} is null and ${products.needsExpiry} = true)::int`,
-      none: sql<number>`count(*) filter (where ${products.expiry} is null and ${products.needsExpiry} = false)::int`,
+      expired: sql<number>`count(*) filter (where ${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} < ${today})::int`,
+      soon: sql<number>`count(*) filter (where ${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} >= ${today} and ${products.expiry} <= (${today}::date + interval '30 day'))::int`,
+      watch: sql<number>`count(*) filter (where ${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} > (${today}::date + interval '30 day') and ${products.expiry} <= (${today}::date + interval '90 day'))::int`,
+      ok: sql<number>`count(*) filter (where ${products.stock} > 0 and ${products.expiry} is not null and ${products.expiry} > (${today}::date + interval '90 day'))::int`,
+      flag: sql<number>`count(*) filter (where ${products.stock} > 0 and ${products.expiry} is null and ${products.needsExpiry} = true)::int`,
+      none: sql<number>`count(*) filter (where ${products.stock} > 0 and ${products.expiry} is null and ${products.needsExpiry} = false)::int`,
       oos: sql<number>`count(*) filter (where ${products.stock} = 0)::int`,
     })
     .from(products);
