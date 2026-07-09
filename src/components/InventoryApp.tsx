@@ -783,7 +783,12 @@ function ReceiveModal({
   const [mode, setMode] = useState<"existing" | "new">(initialMode);
   const preset = presetId ? products.find((p) => p.id === presetId) : undefined;
 
-  const sortedProducts = useMemo(() => [...products].sort((a, b) => a.name.localeCompare(b.name)), [products]);
+  // ponytail: legacy seed has nameless category-header rows (code="Analgesics", name="", 0 stock);
+  // they sort first (empty name) and aren't receivable products, so keep them out of the picker.
+  const sortedProducts = useMemo(
+    () => products.filter((p) => p.name.trim() !== "").sort((a, b) => a.name.localeCompare(b.name)),
+    [products],
+  );
   const [prodId, setProdId] = useState<number>(preset?.id ?? 0);
   const [search, setSearch] = useState(preset?.name ?? "");
   const [showList, setShowList] = useState(false);
