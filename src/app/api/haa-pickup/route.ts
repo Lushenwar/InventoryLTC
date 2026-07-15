@@ -9,6 +9,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const raw = Array.isArray(body.items) ? body.items : [];
   const picker = body.picker ? String(body.picker).trim() : "";
+  if (!picker) return NextResponse.json({ error: "Say who picked this up" }, { status: 400 });
 
   const items = raw
     .map((it: { id: unknown; qty: unknown }) => ({ id: Number(it.id), qty: Number(it.qty) }))
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   }
 
   const at = new Date();
-  const note = picker ? `HAA pickup — ${picker}` : "HAA pickup";
+  const note = `HAA pickup — ${picker}`;
   try {
     // ponytail: no transaction (neon-http). Pre-validated above; the non-negative CHECK is the
     // backstop if stock races down between validate and apply. Fine at single-facility volume.
