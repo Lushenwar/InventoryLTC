@@ -20,6 +20,7 @@ type ModalState =
   | { type: "delete"; product: Product }
   | { type: "receive"; mode: "existing" | "new"; presetId?: number }
   | { type: "remove"; product: Product }
+  | { type: "pickup" }
   | { type: "history"; product: Product }
   | { type: "admin" };
 
@@ -50,6 +51,7 @@ export default function InventoryApp({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [modal, setModal] = useState<ModalState>({ type: "closed" });
+  const [view, setView] = useState<"inventory" | "history">("inventory");
   const [toast, setToast] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState(filters.q);
   const [adminPasscode, setAdminPasscodeState] = useState<string | null>(null);
@@ -170,6 +172,23 @@ export default function InventoryApp({
     showToast(`Removed ${payload.qty} unit(s)`);
   }
 
+  async function submitPickup(payload: { items: { id: number; qty: number }[]; picker: string }) {
+    const res = await fetch("/api/haa-pickup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      showToast(body.error || "Could not record pickup");
+      return;
+    }
+    const body = await res.json();
+    setModal({ type: "closed" });
+    await refreshAfterMutation();
+    showToast(`Recorded HAA pickup · ${body.count} item(s)`);
+  }
+
   async function submitEdit(id: number, payload: Record<string, unknown>, passcode: string) {
     const res = await fetch(`/api/products/${id}`, {
       method: "PATCH",
@@ -231,12 +250,19 @@ export default function InventoryApp({
             <h1>Floor Supply Inventory</h1>
             <p>Long-term care · supply tracking</p>
           </div>
+          <div className="tabnav">
+            <button className={view === "inventory" ? "on" : ""} onClick={() => setView("inventory")}>Inventory</button>
+            <button className={view === "history" ? "on" : ""} onClick={() => setView("history")}>History</button>
+          </div>
           <div className="spacer" />
           <button className="btn" onClick={() => setModal({ type: "receive", mode: "new" })}>
             + New product
           </button>
           <button className="btn primary" onClick={() => setModal({ type: "receive", mode: "existing" })}>
             Receive supply
+          </button>
+          <button className="btn" onClick={() => setModal({ type: "pickup" })}>
+            HAA pickup
           </button>
           <button
             className="btn"
@@ -249,6 +275,10 @@ export default function InventoryApp({
       </header>
 
       <main>
+        {view === "history" ? (
+          <HistoryFeed />
+        ) : (
+        <>
         <div className="stats">
           {statCards.map((c) => (
             <div
@@ -409,6 +439,8 @@ export default function InventoryApp({
             </span>
           </div>
         </div>
+        </>
+        )}
       </main>
 
       {modal.type === "edit" && (
@@ -445,6 +477,13 @@ export default function InventoryApp({
           product={modal.product}
           onClose={() => setModal({ type: "closed" })}
           onRemove={(qty, reason) => submitRemove({ id: modal.product.id, qty, reason })}
+        />
+      )}
+      {modal.type === "pickup" && (
+        <PickupModal
+          products={allProducts}
+          onClose={() => setModal({ type: "closed" })}
+          onSubmit={submitPickup}
         />
       )}
       {modal.type === "history" && (
@@ -707,6 +746,7 @@ function describeEvent(e: EventRow, uom: string): string {
     case "create": return `Created${e.qtyDelta ? ` · ${e.qtyDelta} ${uom}` : ""}`;
     case "receive": return `Received +${e.qtyDelta ?? 0}${e.expirySet ? ` · exp ${e.expirySet}` : ""}`;
     case "adjust": return (e.qtyDelta ?? 0) < 0 ? `Removed ${e.qtyDelta}` : `Adjusted +${e.qtyDelta ?? 0}`;
+    case "pickup": return `HAA pickup ${e.qtyDelta ?? 0} ${uom}`;
     case "set_expiry": return `Expiry set to ${e.expirySet ?? "—"}`;
     case "delete": return "Deleted";
     default: return e.kind;
@@ -758,6 +798,206 @@ function HistoryModal({ product, onClose }: { product: Product; onClose: () => v
       </div>
       <div className="mfoot">
         <button className="btn" onClick={onClose}>Close</button>
+      </div>
+    </Overlay>
+  );
+}
+
+type FeedEvent = EventRow & { name: string | null; code: string | null; location: string | null; uom: string | null };
+type FeedGroup =
+  | { type: "single"; e: FeedEvent }
+  | { type: "pickup"; at: string; note: string | null; lines: FeedEvent[] };
+
+// Consecutive pickup events sharing a timestamp are one HAA order — regroup them so the
+// order shows as a single expandable row instead of one row per line.
+function groupFeed(evs: FeedEvent[]): FeedGroup[] {
+  const out: FeedGroup[] = [];
+  let i = 0;
+  while (i < evs.length) {
+    const e = evs[i];
+    if (e.kind === "pickup") {
+      const lines: FeedEvent[] = [];
+      while (i < evs.length && evs[i].kind === "pickup" && evs[i].at === e.at) lines.push(evs[i++]);
+      out.push({ type: "pickup", at: e.at, note: e.note, lines });
+    } else {
+      out.push({ type: "single", e });
+      i++;
+    }
+  }
+  return out;
+}
+
+function fmtWhen(s: string): string {
+  return new Date(s).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function HistoryFeed() {
+  const [events, setEvents] = useState<FeedEvent[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/history")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => alive && setEvents(d))
+      .catch(() => alive && setError(true));
+    return () => { alive = false; };
+  }, []);
+
+  const groups = events ? groupFeed(events) : [];
+
+  return (
+    <div className="tablewrap" style={{ padding: 18 }}>
+      <h2 style={{ fontSize: 15, margin: "0 0 14px" }}>Activity history</h2>
+      {!events && !error && <div className="hint">Loading…</div>}
+      {error && <div className="hint" style={{ color: "var(--expired)" }}>Could not load history.</div>}
+      {events && events.length === 0 && <div className="hint">No activity recorded yet.</div>}
+      {events && events.length > 0 && (
+        <ul className="histfeed">
+          {groups.map((g, idx) =>
+            g.type === "pickup" ? (
+              <li key={`p${idx}`} className="order">
+                <details>
+                  <summary>
+                    <span className="histwhat">
+                      HAA pickup · {g.lines.length} item(s) · {g.lines.reduce((s, l) => s + Math.abs(l.qtyDelta ?? 0), 0)} units
+                      {g.note && g.note !== "HAA pickup" ? ` · ${g.note.replace("HAA pickup — ", "")}` : ""}
+                    </span>
+                    <span className="histwhen">{fmtWhen(g.at)}</span>
+                  </summary>
+                  <ul className="orderlines">
+                    {g.lines.map((l) => (
+                      <li key={l.id}>{l.name ?? "(removed item)"} — {Math.abs(l.qtyDelta ?? 0)} {l.uom ?? "EA"}{l.location ? ` · ${l.location}` : ""}</li>
+                    ))}
+                  </ul>
+                </details>
+              </li>
+            ) : (
+              <li key={g.e.id}>
+                <div className="histrow">
+                  <span className="histwhat">{describeEvent(g.e, g.e.uom ?? "EA")} — {g.e.name ?? "(removed item)"}</span>
+                  <span className="histwhen">{fmtWhen(g.e.at)}</span>
+                </div>
+                {g.e.note && <div className="expsub">{g.e.note}</div>}
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function PickupModal({
+  products,
+  onClose,
+  onSubmit,
+}: {
+  products: Product[];
+  onClose: () => void;
+  onSubmit: (payload: { items: { id: number; qty: number }[]; picker: string }) => void;
+}) {
+  const inStock = useMemo(
+    () => products.filter((p) => p.name.trim() !== "" && p.stock > 0).sort((a, b) => a.name.localeCompare(b.name)),
+    [products],
+  );
+  const [search, setSearch] = useState("");
+  const [showList, setShowList] = useState(false);
+  const [pickId, setPickId] = useState(0);
+  const [qty, setQty] = useState("1");
+  const [picker, setPicker] = useState("");
+  const [cart, setCart] = useState<{ id: number; name: string; uom: string; qty: number; max: number }[]>([]);
+
+  const selected = products.find((p) => p.id === pickId);
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = q ? inStock.filter((p) => p.name.toLowerCase().includes(q) || (p.code ?? "").toLowerCase().includes(q)) : inStock;
+    return list.slice(0, 20);
+  }, [search, inStock]);
+
+  function addLine() {
+    if (!selected) return;
+    const n = Math.min(Math.max(1, parseInt(qty) || 0), selected.stock);
+    setCart((prev) => {
+      const existing = prev.find((l) => l.id === selected.id);
+      if (existing) return prev.map((l) => (l.id === selected.id ? { ...l, qty: Math.min(l.qty + n, l.max) } : l));
+      return [...prev, { id: selected.id, name: selected.name, uom: selected.uom, qty: n, max: selected.stock }];
+    });
+    setSearch("");
+    setPickId(0);
+    setQty("1");
+  }
+
+  const totalUnits = cart.reduce((s, l) => s + l.qty, 0);
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="mh">
+        <div className="ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
+          </svg>
+        </div>
+        <div><h2>HAA pickup</h2><p>Build one order · removes from on-hand stock</p></div>
+        <button className="x" onClick={onClose}>×</button>
+      </div>
+      <div className="mbody">
+        <div className="field combo">
+          <label>Add item</label>
+          <input
+            type="text"
+            placeholder="Search product or code…"
+            value={search}
+            onFocus={() => setShowList(true)}
+            onChange={(e) => { setSearch(e.target.value); setPickId(0); setShowList(true); }}
+          />
+          {showList && (
+            <div className="combo-list">
+              {matches.length === 0 && <div className="combo-empty">No in-stock products match “{search}”.</div>}
+              {matches.map((p) => (
+                <button
+                  type="button"
+                  key={p.id}
+                  className="combo-item"
+                  onClick={() => { setPickId(p.id); setSearch(p.name); setShowList(false); }}
+                >
+                  {p.name} {p.code ? `· ${p.code}` : ""}
+                  <span className="sub">{p.location} · {p.stock} {p.uom} on hand</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="row2">
+          <div className="field"><label>Quantity</label><input type="number" min={1} max={selected?.stock} value={qty} onChange={(e) => setQty(e.target.value)} /></div>
+          <div className="field" style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="btn" style={{ width: "100%" }} disabled={!selected} onClick={addLine}>Add to order</button>
+          </div>
+        </div>
+        {cart.length > 0 && (
+          <ul className="cartlist">
+            {cart.map((l) => (
+              <li key={l.id}>
+                <span>{l.name}</span>
+                <span className="num" style={{ marginLeft: "auto" }}>{l.qty} {l.uom}</span>
+                <button className="cx" title="Remove line" onClick={() => setCart((prev) => prev.filter((x) => x.id !== l.id))}>×</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="field" style={{ marginTop: 12 }}>
+          <label>Picked up by (optional)</label>
+          <input value={picker} onChange={(e) => setPicker(e.target.value)} placeholder="e.g. name or shift" />
+        </div>
+        <div className="hint">
+          {cart.length > 0 ? <>Order: <b className="num">{cart.length}</b> item(s), <b className="num">{totalUnits}</b> units. Logged to history as one pickup.</> : "Search, set a quantity, and add items to the order."}
+        </div>
+      </div>
+      <div className="mfoot">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" disabled={cart.length === 0} onClick={() => onSubmit({ items: cart.map((l) => ({ id: l.id, qty: l.qty })), picker: picker.trim() })}>
+          Record pickup
+        </button>
       </div>
     </Overlay>
   );
