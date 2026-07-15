@@ -986,7 +986,7 @@ function PickupModal({
           </ul>
         )}
         <div className="field" style={{ marginTop: 12 }}>
-          <label>Picked up by (optional)</label>
+          <label>Picked up by</label>
           <input value={picker} onChange={(e) => setPicker(e.target.value)} placeholder="e.g. name or shift" />
         </div>
         <div className="hint">
@@ -995,7 +995,7 @@ function PickupModal({
       </div>
       <div className="mfoot">
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn primary" disabled={cart.length === 0} onClick={() => onSubmit({ items: cart.map((l) => ({ id: l.id, qty: l.qty })), picker: picker.trim() })}>
+        <button className="btn primary" disabled={cart.length === 0 || !picker.trim()} onClick={() => onSubmit({ items: cart.map((l) => ({ id: l.id, qty: l.qty })), picker: picker.trim() })}>
           Record pickup
         </button>
       </div>
