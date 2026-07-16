@@ -7,9 +7,6 @@ export const products = pgTable("products", {
   name: text("name").notNull(),
   uom: text("uom").notNull().default("EA"),
   stock: integer("stock").notNull().default(0),
-  // Pieces inside one stocked unit (e.g. a box of 24). Quantity = stock * piecesPerUnit,
-  // derived on read, never stored. Default 1 so undefined-pack items read stock as-is.
-  piecesPerUnit: integer("pieces_per_unit").notNull().default(1),
   location: text("location").notNull(),
   expiry: date("expiry"),
   needsExpiry: boolean("needs_expiry").notNull().default(false),
