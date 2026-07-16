@@ -5,12 +5,13 @@
 // multi-number titles. Upgrade path if mis-reads pile up: a stored override column.
 export function packSize(name: string): number {
   const s = name.toLowerCase();
+  // Pack count = the number beside a slash, either order: "30/cs" -> 30, "case/4" -> 4,
+  // "box/100 each" -> 100. Word side needs 2+ letters so 'w/2"' (with-2-inch) doesn't match.
   const m =
-    s.match(/\/\s*(\d+)\s*(?:each|ea)\b/) ||                                   // case/250 each, box/100 each, /100 each
-    s.match(/(\d+)\s*\/\s*(?:box|bx|bag|bg|pk|pack|case|ca|tub|sleeve|pkg|package)\b/) || // 30/box, 2/pk, 250/bx, 100/pk
-    s.match(/(\d+)\s*per\b/) ||                                                // 160 per tub, 20 per package
-    s.match(/(\d+)\s*(?:count|ct|pcs|pc|pieces|supp\w*|sleeve|bags?|bg)\b/) || // 144 count, 5pcs, 4 bags, 10bg
-    s.match(/(\d+)\s*pk\b/);                                                   // 12pk
+    s.match(/(\d+)\s*\/\s*[a-z]{2,}/) ||   // 30/box, 2/pk, 250/bx, 10/bg
+    s.match(/[a-z]{2,}\s*\/\s*(\d+)/) ||   // case/4, box/100, case/1920 each
+    s.match(/(\d+)\s*per\b/) ||            // 160 per tub, 20 per package
+    s.match(/(\d+)\s*(?:count|ct|pcs|pc|pieces|supp\w*|sleeve|bags?|bg|pk)\b/); // 144 count, 5pcs, 4 bags, 12pk
   const n = m ? parseInt(m[1], 10) : 1;
   return n > 0 ? n : 1;
 }

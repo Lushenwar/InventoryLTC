@@ -8,6 +8,9 @@ const cases: [string, number][] = [
   ["APPLICATOR COTTON TIP 6\" STERILE 2/PK", 2],
   ["APRON PLASTIC ... BOX/100 EACH", 100],
   ["ACCEL ... 160 PER TUB CASE/1920 EACH", 1920],
+  ["ATTENDS SHAPED PAD NIGHT SUPER , CASE/4 BAGS EACH", 4],
+  ["Some glove 30/cs", 30],
+  ["BEDSIDE RAIL BUMPER PAD W/2\" WRAP 30\"CVR", 1], // w/2" is with-2-inch, not a pack
   ["Cup Drinking Paper 4OZ 100/PK", 100],
   ["Covid Ag (rapid test kit),5pcs/box", 5],
   ["Calmoseptine Ointment, 3-5gm., 144 Count", 144],
