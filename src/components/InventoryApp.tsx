@@ -141,20 +141,26 @@ export default function InventoryApp({
     showToast(`Added "${payload.name}"`);
   }
 
-  async function submitReceive(payload: { id: number; qty: number; expiry?: string | null }) {
-    const res = await fetch("/api/receive", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not receive stock");
-      return;
+  // Loops the single-line /api/receive per cart line so all the lot logic lives in one place.
+  // Not one transaction, but receiving is additive (no negative-stock risk), so applied lines stand.
+  async function submitReceiveMany(lines: { id: number; qty: number; expiry: string | null }[]) {
+    const oks: boolean[] = [];
+    for (const l of lines) {
+      const res = await fetch("/api/receive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(l),
+      });
+      oks.push(res.ok);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        showToast(body.error || "Could not receive one line");
+      }
     }
     setModal({ type: "closed" });
     await refreshAfterMutation();
-    showToast(`Received ${payload.qty} unit(s)`);
+    const done = oks.filter(Boolean).length;
+    if (oks.every(Boolean) && done) showToast(`Received ${done} line(s)`);
   }
 
   async function submitRemove(payload: { id: number; qty: number; reason: string }) {
@@ -477,7 +483,7 @@ export default function InventoryApp({
           locations={locations}
           onClose={() => setModal({ type: "closed" })}
           onCreate={submitCreate}
-          onReceive={submitReceive}
+          onReceiveMany={submitReceiveMany}
         />
       )}
       {modal.type === "remove" && (
@@ -1018,7 +1024,7 @@ function ReceiveModal({
   locations,
   onClose,
   onCreate,
-  onReceive,
+  onReceiveMany,
 }: {
   initialMode: "existing" | "new";
   presetId?: number;
@@ -1026,7 +1032,7 @@ function ReceiveModal({
   locations: string[];
   onClose: () => void;
   onCreate: (payload: Record<string, unknown>) => void;
-  onReceive: (payload: { id: number; qty: number; expiry?: string | null }) => void;
+  onReceiveMany: (lines: { id: number; qty: number; expiry: string | null }[]) => void;
 }) {
   const [mode, setMode] = useState<"existing" | "new">(initialMode);
   const preset = presetId ? products.find((p) => p.id === presetId) : undefined;
@@ -1042,6 +1048,7 @@ function ReceiveModal({
   const [showList, setShowList] = useState(false);
   const [qty, setQty] = useState("1");
   const [recvExpiry, setRecvExpiry] = useState("");
+  const [cart, setCart] = useState<{ id: number; name: string; uom: string; qty: number; expiry: string | null }[]>([]);
 
   const selected = products.find((p) => p.id === prodId);
   const matches = useMemo(() => {
@@ -1051,6 +1058,23 @@ function ReceiveModal({
       : sortedProducts;
     return list.slice(0, 20); // ponytail: cap the dropdown; typing narrows it further
   }, [search, sortedProducts]);
+
+  function addLine() {
+    if (!selected) return;
+    const n = Math.max(1, parseInt(qty) || 0);
+    setCart((prev) => [...prev, { id: selected.id, name: selected.name, uom: selected.uom, qty: n, expiry: recvExpiry || null }]);
+    setSearch("");
+    setProdId(0);
+    setQty("1");
+    setRecvExpiry("");
+  }
+
+  // Selected-but-not-added counts as a single line, so staff can just click Receive.
+  function submit() {
+    const lines = cart.map((l) => ({ id: l.id, qty: l.qty, expiry: l.expiry }));
+    if (prodId) lines.push({ id: prodId, qty: Math.max(1, parseInt(qty) || 0), expiry: recvExpiry || null });
+    if (lines.length) onReceiveMany(lines);
+  }
 
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -1113,7 +1137,22 @@ function ReceiveModal({
               <div className="field"><label>Quantity received</label><input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} /></div>
               <div className="field"><label>New expiry (optional)</label><input type="date" value={recvExpiry} onChange={(e) => setRecvExpiry(e.target.value)} /></div>
             </div>
-            <div className="hint">Same or blank expiry tops up this line. A <b>different</b> expiry is logged as its own lot (a separate line with its own countdown), leaving the picked line untouched.</div>
+            <button className="btn" style={{ width: "100%" }} disabled={!selected} onClick={addLine}>Add another to this delivery</button>
+            {cart.length > 0 && (
+              <ul className="cartlist">
+                {cart.map((l, i) => (
+                  <li key={i}>
+                    <span>{l.name}</span>
+                    <span className="num" style={{ marginLeft: "auto" }}>{l.qty} {l.uom}{l.expiry ? ` · exp ${l.expiry}` : ""}</span>
+                    <button className="cx" title="Remove line" onClick={() => setCart((prev) => prev.filter((_, x) => x !== i))}>×</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="hint">
+              Pick an item and hit <b>Receive</b> to log just that one. <b>Add another</b> to receive several in one go.
+              Same or blank expiry tops up the line; a <b>different</b> expiry becomes its own lot.
+            </div>
           </>
         ) : (
           <>
@@ -1145,11 +1184,10 @@ function ReceiveModal({
         <button className="btn" onClick={onClose}>Cancel</button>
         <button
           className="btn primary"
-          disabled={mode === "existing" && !prodId}
+          disabled={mode === "existing" ? cart.length === 0 && !prodId : false}
           onClick={() => {
             if (mode === "existing") {
-              if (!prodId) return;
-              onReceive({ id: prodId, qty: parseInt(qty) || 0, expiry: recvExpiry || null });
+              submit();
             } else {
               if (!name.trim()) return;
               onCreate({
@@ -1164,7 +1202,7 @@ function ReceiveModal({
             }
           }}
         >
-          Receive
+          {mode === "existing" && cart.length > 0 ? `Receive ${cart.length + (prodId ? 1 : 0)} line(s)` : "Receive"}
         </button>
       </div>
     </Overlay>
