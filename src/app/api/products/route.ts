@@ -19,7 +19,6 @@ export async function POST(req: NextRequest) {
       name,
       uom: body.uom ? String(body.uom).trim() : "EA",
       stock,
-      piecesPerUnit: Math.max(1, Number(body.piecesPerUnit) || 1),
       location,
       expiry,
       needsExpiry,

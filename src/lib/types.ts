@@ -4,7 +4,6 @@ export interface Product {
   name: string;
   uom: string;
   stock: number;
-  piecesPerUnit: number;
   location: string;
   expiry: string | null;
   needsExpiry: boolean;

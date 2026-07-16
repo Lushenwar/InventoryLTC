@@ -23,7 +23,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const code = body.code !== undefined ? String(body.code).trim() || null : existing.code;
   const uom = body.uom !== undefined ? String(body.uom).trim() || "EA" : existing.uom;
   const stock = body.stock !== undefined ? Math.max(0, Number(body.stock) || 0) : existing.stock;
-  const piecesPerUnit = body.piecesPerUnit !== undefined ? Math.max(1, Number(body.piecesPerUnit) || 1) : existing.piecesPerUnit;
   const location = body.location !== undefined ? String(body.location).trim() : existing.location;
   const expiry: string | null = body.expiry !== undefined ? body.expiry || null : existing.expiry;
   const needsExpiry = expiry
@@ -40,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const [updated] = await db
     .update(products)
-    .set({ name, code, uom, stock, piecesPerUnit, location, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: expiryChanged ? "admin" : existing.updatedBy, ...(expiryChanged ? { expiredNotified: false } : {}) })
+    .set({ name, code, uom, stock, location, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: expiryChanged ? "admin" : existing.updatedBy, ...(expiryChanged ? { expiredNotified: false } : {}) })
     .where(eq(products.id, id))
     .returning();
 
