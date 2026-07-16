@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD COLUMN "pieces_per_unit" integer DEFAULT 1 NOT NULL;

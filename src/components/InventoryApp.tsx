@@ -337,6 +337,7 @@ export default function InventoryApp({
                 <th onClick={() => toggleSort("name")}>Product <span className="arr">{sortArrow("name")}</span></th>
                 <th className="hide-md" onClick={() => toggleSort("location")}>Location <span className="arr">{sortArrow("location")}</span></th>
                 <th onClick={() => toggleSort("stock")}>On hand <span className="arr">{sortArrow("stock")}</span></th>
+                <th className="no-sort">Quantity</th>
                 <th onClick={() => toggleSort("expiry")}>Expiry status <span className="arr">{sortArrow("expiry")}</span></th>
                 <th className="no-sort" style={{ textAlign: "right" }}>Actions</th>
               </tr>
@@ -364,6 +365,12 @@ export default function InventoryApp({
                       <span className={`stockcell num ${stock === 0 ? "zero" : ""}`}>
                         {stock.toLocaleString()}
                         <span className="u">{it.uom}</span>
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`stockcell num ${stock === 0 ? "zero" : ""}`}>
+                        {(stock * it.piecesPerUnit).toLocaleString()}
+                        <span className="u">pcs</span>
                       </span>
                     </td>
                     <td>
@@ -558,6 +565,7 @@ function EditModal({
   const [code, setCode] = useState(product.code ?? "");
   const [uom, setUom] = useState(product.uom);
   const [stock, setStock] = useState(String(product.stock));
+  const [piecesPerUnit, setPiecesPerUnit] = useState(String(product.piecesPerUnit));
   const [location, setLocation] = useState(product.location);
   const [expiry, setExpiry] = useState(product.expiry ?? "");
   const [needsExpiry, setNeedsExpiry] = useState(product.needsExpiry);
@@ -585,6 +593,9 @@ function EditModal({
         </div>
         <div className="row2">
           <div className="field"><label>On hand</label><input type="number" min={0} value={stock} onChange={(e) => setStock(e.target.value)} /></div>
+          <div className="field"><label>Pieces per {uom || "unit"}</label><input type="number" min={1} value={piecesPerUnit} onChange={(e) => setPiecesPerUnit(e.target.value)} /></div>
+        </div>
+        <div className="row2">
           <div className="field">
             <label>Location</label>
             <select value={location} onChange={(e) => setLocation(e.target.value)}>
@@ -624,6 +635,7 @@ function EditModal({
                 code: code.trim(),
                 uom: uom.trim() || "EA",
                 stock: Math.max(0, parseInt(stock) || 0),
+                piecesPerUnit: Math.max(1, parseInt(piecesPerUnit) || 1),
                 location,
                 expiry: expiry || null,
                 needsExpiry,
@@ -1047,6 +1059,7 @@ function ReceiveModal({
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [uom, setUom] = useState("EA");
+  const [piecesPerUnit, setPiecesPerUnit] = useState("1");
   const [newQty, setNewQty] = useState("1");
   const [location, setLocation] = useState(preset?.location ?? locations[0] ?? "");
   const [newExpiry, setNewExpiry] = useState("");
@@ -1114,6 +1127,7 @@ function ReceiveModal({
               <div className="field"><label>Code / SKU</label><input value={code} onChange={(e) => setCode(e.target.value)} placeholder="optional" /></div>
               <div className="field"><label>Unit (UOM)</label><input value={uom} onChange={(e) => setUom(e.target.value)} /></div>
             </div>
+            <div className="field"><label>Pieces per {uom || "unit"}</label><input type="number" min={1} value={piecesPerUnit} onChange={(e) => setPiecesPerUnit(e.target.value)} /></div>
             <div className="row2">
               <div className="field"><label>Quantity received</label><input type="number" min={0} value={newQty} onChange={(e) => setNewQty(e.target.value)} /></div>
               <div className="field">
@@ -1148,6 +1162,7 @@ function ReceiveModal({
                 name: name.trim(),
                 code: code.trim(),
                 uom: uom.trim() || "EA",
+                piecesPerUnit: Math.max(1, parseInt(piecesPerUnit) || 1),
                 stock: Math.max(0, parseInt(newQty) || 0),
                 location,
                 expiry: newExpiry || null,
