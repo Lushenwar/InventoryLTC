@@ -11,7 +11,7 @@ See `CLAUDE.md` for the full product definition, architecture, and build history
 - **Remove / use stock** (minus button on a row): log stock going *out* — used, wasted, expired-and-pulled, or a count correction. Pick a quantity and reason; it's an atomic decrement (can't go below zero) and is recorded in the item's history. Open to all staff, no passcode.
 - **History** (click a product's name): the item's full timeline — created, received, removed (with reason), expiry set, etc. — read straight from the append-only `events` log.
 - **Search / location / status filters**: all query the live database directly, not a cached list.
-- **Expiry reminders panel**: pick a window (30/60/180 days), copy the message or open it in your email client.
+- **Expiry reminders panel**: pick a window (30/60/90/180 days), copy the message or open it in your email client.
 
 Editing a product's name, stock, location, or note doesn't need anything special.
 
