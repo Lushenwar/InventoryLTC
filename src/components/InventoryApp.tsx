@@ -10,6 +10,7 @@ import ReminderPanel from "./ReminderPanel";
 interface Filters {
   q: string;
   loc: string;
+  cat: string;
   status: string;
   sort: string;
   dir: string;
@@ -39,6 +40,7 @@ export default function InventoryApp({
   allProducts,
   counts,
   locations,
+  categories,
   today,
   filters,
 }: {
@@ -46,6 +48,7 @@ export default function InventoryApp({
   allProducts: Product[];
   counts: Counts;
   locations: string[];
+  categories: string[];
   today: string;
   filters: Filters;
 }) {
@@ -96,6 +99,7 @@ export default function InventoryApp({
     const params = new URLSearchParams();
     if (next.q) params.set("q", next.q);
     if (next.loc && next.loc !== "all") params.set("loc", next.loc);
+    if (next.cat && next.cat !== "all") params.set("cat", next.cat);
     if (next.status && next.status !== "all") params.set("status", next.status);
     if (next.sort && next.sort !== "expiry") params.set("sort", next.sort);
     if (next.dir && next.dir !== "asc") params.set("dir", next.dir);
@@ -323,6 +327,14 @@ export default function InventoryApp({
               </option>
             ))}
           </select>
+          <select className="sel" value={filters.cat} onChange={(e) => updateParams({ cat: e.target.value })}>
+            <option value="all">All categories</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
           <div className="chips">
             {chips.map((c) => (
               <button
@@ -343,6 +355,7 @@ export default function InventoryApp({
               <tr>
                 <th onClick={() => toggleSort("name")}>Product <span className="arr">{sortArrow("name")}</span></th>
                 <th className="hide-md" onClick={() => toggleSort("location")}>Location <span className="arr">{sortArrow("location")}</span></th>
+                <th className="hide-md" onClick={() => toggleSort("category")}>Category <span className="arr">{sortArrow("category")}</span></th>
                 <th onClick={() => toggleSort("stock")}>On hand <span className="arr">{sortArrow("stock")}</span></th>
                 <th className="no-sort">Quantity</th>
                 <th onClick={() => toggleSort("expiry")}>Expiry status <span className="arr">{sortArrow("expiry")}</span></th>
@@ -368,6 +381,7 @@ export default function InventoryApp({
                         {it.location || "—"}
                       </span>
                     </td>
+                    <td className="hide-md">{it.category || "—"}</td>
                     <td>
                       <span className={`stockcell num ${stock === 0 ? "zero" : ""}`}>
                         {stock.toLocaleString()}
