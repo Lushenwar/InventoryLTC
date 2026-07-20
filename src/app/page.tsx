@@ -1,4 +1,4 @@
-import { fetchProducts, fetchCounts, fetchLocations } from "@/lib/queries";
+import { fetchProducts, fetchCounts, fetchLocations, fetchCategories } from "@/lib/queries";
 import { facilityToday } from "@/lib/expiry";
 import InventoryApp from "@/components/InventoryApp";
 
@@ -15,17 +15,19 @@ export default async function Page({
   const filters = {
     q: pick("q", ""),
     loc: pick("loc", "all"),
+    cat: pick("cat", "all"),
     status: pick("status", "all"),
     sort: pick("sort", "expiry"),
     dir: pick("dir", "asc"),
   };
 
   const today = facilityToday();
-  const [rows, allProducts, counts, locations] = await Promise.all([
+  const [rows, allProducts, counts, locations, categories] = await Promise.all([
     fetchProducts(filters, today),
     fetchProducts({}, today),
     fetchCounts(today),
     fetchLocations(),
+    fetchCategories(),
   ]);
 
   return (
@@ -34,6 +36,7 @@ export default async function Page({
       allProducts={allProducts}
       counts={counts}
       locations={locations}
+      categories={categories}
       today={today}
       filters={filters}
     />
