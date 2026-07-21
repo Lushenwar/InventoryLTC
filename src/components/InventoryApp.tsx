@@ -1049,6 +1049,7 @@ function ReceiveModal({
   onReceiveMany: (lines: { id: number; qty: number; expiry: string | null }[]) => void;
 }) {
   const [mode, setMode] = useState<"existing" | "new">(initialMode);
+  const [busy, setBusy] = useState(false); // guards against rapid double/triple clicks receiving Nx
   const preset = presetId ? products.find((p) => p.id === presetId) : undefined;
 
   // ponytail: legacy seed has nameless category-header rows (code="Analgesics", name="", 0 stock);
@@ -1087,7 +1088,7 @@ function ReceiveModal({
   function submit() {
     const lines = cart.map((l) => ({ id: l.id, qty: l.qty, expiry: l.expiry }));
     if (prodId) lines.push({ id: prodId, qty: Math.max(1, parseInt(qty) || 0), expiry: recvExpiry || null });
-    if (lines.length) onReceiveMany(lines);
+    if (lines.length) return onReceiveMany(lines);
   }
 
   const [name, setName] = useState("");
@@ -1198,25 +1199,31 @@ function ReceiveModal({
         <button className="btn" onClick={onClose}>Cancel</button>
         <button
           className="btn primary"
-          disabled={mode === "existing" ? cart.length === 0 && !prodId : false}
-          onClick={() => {
-            if (mode === "existing") {
-              submit();
-            } else {
-              if (!name.trim()) return;
-              onCreate({
-                name: name.trim(),
-                code: code.trim(),
-                uom: uom.trim() || "EA",
-                stock: Math.max(0, parseInt(newQty) || 0),
-                location,
-                expiry: newExpiry || null,
-                needsExpiry,
-              });
+          disabled={busy || (mode === "existing" ? cart.length === 0 && !prodId : false)}
+          onClick={async () => {
+            if (busy) return;
+            setBusy(true); // blocks the double-fire; handlers close the modal on success, we clear busy on failure
+            try {
+              if (mode === "existing") {
+                await submit();
+              } else {
+                if (!name.trim()) return;
+                await onCreate({
+                  name: name.trim(),
+                  code: code.trim(),
+                  uom: uom.trim() || "EA",
+                  stock: Math.max(0, parseInt(newQty) || 0),
+                  location,
+                  expiry: newExpiry || null,
+                  needsExpiry,
+                });
+              }
+            } finally {
+              setBusy(false);
             }
           }}
         >
-          {mode === "existing" && cart.length > 0 ? `Receive ${cart.length + (prodId ? 1 : 0)} line(s)` : "Receive"}
+          {busy ? "Receiving…" : mode === "existing" && cart.length > 0 ? `Receive ${cart.length + (prodId ? 1 : 0)} line(s)` : "Receive"}
         </button>
       </div>
     </Overlay>
