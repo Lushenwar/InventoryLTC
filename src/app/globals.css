@@ -238,7 +238,10 @@
     border-radius:6px;font-size:15px;line-height:1;color:var(--ink);display:grid;place-items:center}
   .qstep button:hover{border-color:var(--faint);background:var(--surface-2)}
   .qstep button:disabled{opacity:.4;cursor:not-allowed}
-  .qstep .num{min-width:20px;text-align:center;font-weight:600}
+  .qstep input{width:44px;height:26px;text-align:center;font-weight:600;padding:0 2px;
+    border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--ink);
+    font-variant-numeric:tabular-nums}
+  .qstep input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
   @media(min-width:881px){
     main.shopping{margin-left:auto;margin-right:330px}
     .cartdock{top:var(--hdr-h,63px);right:0;bottom:0;width:330px;border-left:1px solid var(--line)}

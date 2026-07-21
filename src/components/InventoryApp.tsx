@@ -993,7 +993,18 @@ function PickupCart({
                 <span className="cname">{l.name}</span>
                 <div className="qstep">
                   <button onClick={() => onQty(l.id, l.qty - 1)} aria-label="Decrease">−</button>
-                  <span className="num">{l.qty}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={l.max}
+                    value={l.qty}
+                    aria-label={`Quantity of ${l.name}`}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value);
+                      if (Number.isNaN(v)) return; // ignore empty/partial while typing; × removes a line
+                      onQty(l.id, Math.min(Math.max(1, v), l.max));
+                    }}
+                  />
                   <button onClick={() => onQty(l.id, l.qty + 1)} disabled={l.qty >= l.max} aria-label="Increase">+</button>
                 </div>
                 <button className="cx" title="Remove" onClick={() => onQty(l.id, 0)}>×</button>
