@@ -200,12 +200,12 @@ export default function InventoryApp({
     showToast(`Removed ${payload.qty} unit(s)`);
   }
 
-  // Returns true on success so the cart dock knows to reset its own busy/picker state.
-  async function submitPickup(picker: string): Promise<boolean> {
+  // Returns true on success so the cart dock knows to reset its own busy/unit/picker state.
+  async function submitPickup(unit: string, picker: string): Promise<boolean> {
     const res = await fetch("/api/haa-pickup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: cart.map((l) => ({ id: l.id, qty: l.qty })), picker }),
+      body: JSON.stringify({ items: cart.map((l) => ({ id: l.id, qty: l.qty })), unit, picker }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -960,17 +960,19 @@ function PickupCart({
   cart: CartLine[];
   onQty: (id: number, qty: number) => void;
   onClose: () => void;
-  onSubmit: (picker: string) => Promise<boolean>;
+  onSubmit: (unit: string, picker: string) => Promise<boolean>;
 }) {
+  const [unit, setUnit] = useState("");
   const [picker, setPicker] = useState("");
   const [busy, setBusy] = useState(false);
   const totalUnits = cart.reduce((s, l) => s + l.qty, 0);
+  const ready = cart.length > 0 && !!unit.trim() && !!picker.trim();
 
   async function record() {
-    if (busy || cart.length === 0 || !picker.trim()) return;
+    if (busy || !ready) return;
     setBusy(true);
-    const ok = await onSubmit(picker.trim());
-    if (ok) setPicker("");
+    const ok = await onSubmit(unit.trim(), picker.trim());
+    if (ok) { setUnit(""); setPicker(""); }
     else setBusy(false); // stay open on failure so they can retry
   }
 
@@ -1015,10 +1017,14 @@ function PickupCart({
       </div>
       <div className="cartdock-f">
         <div className="field">
+          <label>Unit</label>
+          <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. 3 East" />
+        </div>
+        <div className="field">
           <label>Picked up by</label>
           <input value={picker} onChange={(e) => setPicker(e.target.value)} placeholder="e.g. name or shift" />
         </div>
-        <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} disabled={busy || cart.length === 0 || !picker.trim()} onClick={record}>
+        <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} disabled={busy || !ready} onClick={record}>
           {busy ? "Recording…" : "Record pickup"}
         </button>
       </div>

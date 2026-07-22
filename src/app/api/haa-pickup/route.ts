@@ -8,7 +8,9 @@ import { db, products, events } from "@/lib/db";
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const raw = Array.isArray(body.items) ? body.items : [];
+  const unit = body.unit ? String(body.unit).trim() : "";
   const picker = body.picker ? String(body.picker).trim() : "";
+  if (!unit) return NextResponse.json({ error: "Say which unit this order is for" }, { status: 400 });
   if (!picker) return NextResponse.json({ error: "Say who picked this up" }, { status: 400 });
 
   const items = raw
@@ -26,7 +28,9 @@ export async function POST(req: NextRequest) {
   }
 
   const at = new Date();
-  const note = `HAA pickup — ${picker}`;
+  // ponytail: unit + picker live in the free-text note, no new column. Add one if units ever
+  // need to be filtered/reported on rather than just read back in history.
+  const note = `HAA pickup — ${unit} · ${picker}`;
   try {
     // ponytail: no transaction (neon-http). Pre-validated above; the non-negative CHECK is the
     // backstop if stock races down between validate and apply. Fine at single-facility volume.
