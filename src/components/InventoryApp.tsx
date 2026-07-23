@@ -1018,11 +1018,11 @@ function PickupCart({
       <div className="cartdock-f">
         <div className="field">
           <label>Unit</label>
-          <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. 3 East" />
+          <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. 3E or 5W" />
         </div>
         <div className="field">
           <label>Picked up by</label>
-          <input value={picker} onChange={(e) => setPicker(e.target.value)} placeholder="e.g. name or shift" />
+          <input value={picker} onChange={(e) => setPicker(e.target.value)} placeholder="e.g. name" />
         </div>
         <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} disabled={busy || !ready} onClick={record}>
           {busy ? "Recording…" : "Record pickup"}
