@@ -894,24 +894,46 @@ function fmtWhen(s: string): string {
 function HistoryFeed() {
   const [events, setEvents] = useState<FeedEvent[] | null>(null);
   const [error, setError] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [q, setQ] = useState("");
+  const [query, setQuery] = useState(""); // debounced value actually sent to the API
+  const [page, setPage] = useState(0);
+
+  // Debounce the search box so we don't hit the API on every keystroke; reset to page 0 on new query.
+  useEffect(() => {
+    const t = setTimeout(() => { setQuery(q.trim()); setPage(0); }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/history")
+    setEvents(null);
+    setError(false);
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (page) params.set("page", String(page));
+    fetch(`/api/history?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d) => alive && setEvents(d))
+      .then((d) => { if (alive) { setEvents(d.rows); setHasMore(d.hasMore); } })
       .catch(() => alive && setError(true));
     return () => { alive = false; };
-  }, []);
+  }, [query, page]);
 
   const groups = events ? groupFeed(events) : [];
 
   return (
     <div className="tablewrap" style={{ padding: 18 }}>
       <h2 style={{ fontSize: 15, margin: "0 0 14px" }}>Activity history</h2>
+      <div className="field" style={{ marginBottom: 14 }}>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search history by item, code, location, or name…"
+        />
+      </div>
       {!events && !error && <div className="hint">Loading…</div>}
       {error && <div className="hint" style={{ color: "var(--expired)" }}>Could not load history.</div>}
-      {events && events.length === 0 && <div className="hint">No activity recorded yet.</div>}
+      {events && events.length === 0 && <div className="hint">{query ? `No history matching "${query}".` : "No activity recorded yet."}</div>}
       {events && events.length > 0 && (
         <ul className="histfeed">
           {groups.map((g, idx) =>
@@ -955,6 +977,13 @@ function HistoryFeed() {
             ),
           )}
         </ul>
+      )}
+      {events && (page > 0 || hasMore) && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+          <button className="btn" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>← Newer</button>
+          <span className="hint">Page {page + 1}</span>
+          <button className="btn" disabled={!hasMore} onClick={() => setPage((p) => p + 1)}>Older →</button>
+        </div>
       )}
     </div>
   );
