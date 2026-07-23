@@ -66,7 +66,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const [existing] = await db.select().from(products).where(eq(products.id, id)).limit(1);
   if (!existing) return NextResponse.json({ error: "Product not found" }, { status: 404 });
 
-  await db.insert(events).values({ productId: id, kind: "delete", actor: "admin" });
+  // productId is nulled on delete, so stash the identity in the note — it's the only record left.
+  const identity = [existing.code, existing.name, existing.location].filter(Boolean).join(" · ");
+  await db.insert(events).values({ productId: id, kind: "delete", actor: "admin", note: identity });
   await db.delete(products).where(eq(products.id, id));
 
   return NextResponse.json({ ok: true });

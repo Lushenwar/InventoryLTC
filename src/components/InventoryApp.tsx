@@ -886,6 +886,18 @@ function HistoryFeed() {
                   </ul>
                 </details>
               </li>
+            ) : g.e.kind === "delete" ? (
+              <li key={g.e.id} className="order">
+                <details>
+                  <summary>
+                    <span className="histwhat">Deleted item</span>
+                    <span className="histwhen">{fmtWhen(g.e.at)}</span>
+                  </summary>
+                  <ul className="orderlines">
+                    <li>{g.e.note ?? "(details unavailable)"}</li>
+                  </ul>
+                </details>
+              </li>
             ) : (
               <li key={g.e.id}>
                 <div className="histrow">
