@@ -25,7 +25,9 @@ type ModalState =
   | { type: "history"; product: Product }
   | { type: "admin" };
 
-type CartLine = { id: number; name: string; uom: string; qty: number; max: number };
+// qty/max are always in stock units (boxes). For PPE (unitsPerBox set) the pickup UI
+// enters/shows total pieces and converts to boxes; the stored qty stays boxes.
+type CartLine = { id: number; name: string; uom: string; qty: number; max: number; unitsPerBox: number | null };
 
 const ADMIN_SESSION_KEY = "steward_admin_passcode";
 
@@ -71,7 +73,7 @@ export default function InventoryApp({
     setCart((prev) => {
       const ex = prev.find((l) => l.id === p.id);
       if (ex) return prev.map((l) => (l.id === p.id ? { ...l, qty: Math.min(l.qty + 1, l.max) } : l));
-      return [...prev, { id: p.id, name: p.name, uom: p.uom, qty: 1, max: p.stock }];
+      return [...prev, { id: p.id, name: p.name, uom: p.uom, qty: 1, max: p.stock, unitsPerBox: p.unitsPerBox }];
     });
   }
   function setCartQty(id: number, qty: number) {
@@ -429,7 +431,7 @@ export default function InventoryApp({
                       {pickupMode ? (
                         <div className="rowbtns">
                           <button className="btn addbtn" disabled={stock === 0} onClick={() => addToCart(it)}>
-                            {cartQty.has(it.id) ? `In cart · ${cartQty.get(it.id)}` : stock === 0 ? "No stock" : "Add"}
+                            {cartQty.has(it.id) ? `In cart · ${it.unitsPerBox ? `${cartQty.get(it.id)! * it.unitsPerBox} pcs` : cartQty.get(it.id)}` : stock === 0 ? "No stock" : "Add"}
                           </button>
                         </div>
                       ) : (
@@ -1033,19 +1035,21 @@ function PickupCart({
           <ul className="cartlist">
             {cart.map((l) => (
               <li key={l.id}>
-                <span className="cname">{l.name}</span>
+                <span className="cname">{l.name}{l.unitsPerBox ? <span className="sub">= {l.qty} {l.uom} on hand ({l.unitsPerBox}/box)</span> : null}</span>
                 <div className="qstep">
+                  {/* PPE: enter total pieces, stored qty stays boxes (pieces / unitsPerBox). Steppers move 1 box. */}
                   <button onClick={() => onQty(l.id, l.qty - 1)} aria-label="Decrease">−</button>
                   <input
                     type="number"
-                    min={1}
-                    max={l.max}
-                    value={l.qty}
-                    aria-label={`Quantity of ${l.name}`}
+                    min={l.unitsPerBox ?? 1}
+                    max={l.unitsPerBox ? l.max * l.unitsPerBox : l.max}
+                    value={l.unitsPerBox ? l.qty * l.unitsPerBox : l.qty}
+                    aria-label={`Quantity of ${l.name}${l.unitsPerBox ? " in pieces" : ""}`}
                     onChange={(e) => {
                       const v = parseInt(e.target.value);
                       if (Number.isNaN(v)) return; // ignore empty/partial while typing; × removes a line
-                      onQty(l.id, Math.min(Math.max(1, v), l.max));
+                      const boxes = l.unitsPerBox ? Math.round(v / l.unitsPerBox) : v;
+                      onQty(l.id, Math.min(Math.max(1, boxes), l.max));
                     }}
                   />
                   <button onClick={() => onQty(l.id, l.qty + 1)} disabled={l.qty >= l.max} aria-label="Increase">+</button>
