@@ -5,6 +5,7 @@ export interface Product {
   uom: string;
   stock: number;
   location: string;
+  category: string | null;
   expiry: string | null;
   needsExpiry: boolean;
   note: string;

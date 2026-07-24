@@ -8,6 +8,7 @@ export const products = pgTable("products", {
   uom: text("uom").notNull().default("EA"),
   stock: integer("stock").notNull().default(0),
   location: text("location").notNull(),
+  category: text("category"),           // sorting/grouping bucket; null until assigned
   expiry: date("expiry"),
   needsExpiry: boolean("needs_expiry").notNull().default(false),
   // Pieces per stocked unit (box/case), for PPE only. When set, receive/pickup take a
@@ -22,6 +23,7 @@ export const products = pgTable("products", {
   updatedBy: text("updated_by"),
 }, (table) => [
   index("products_location_idx").on(table.location),
+  index("products_category_idx").on(table.category),
   index("products_expiry_idx").on(table.expiry),
   check("stock_non_negative", sql`${table.stock} >= 0`),
 ]);

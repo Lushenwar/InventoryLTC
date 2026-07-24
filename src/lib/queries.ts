@@ -5,12 +5,13 @@ import type { Counts, Product } from "./types";
 export interface Filters {
   q?: string;
   loc?: string;
+  cat?: string;
   status?: string;
   sort?: string;
   dir?: string;
 }
 
-const SORTABLE = new Set(["name", "location", "stock", "expiry"]);
+const SORTABLE = new Set(["name", "location", "category", "stock", "expiry"]);
 
 // Every expiry status is scoped to in-stock rows so the chip filters match the
 // badges: a zero-on-hand item is "Out of stock", never expired/expiring/etc.
@@ -50,6 +51,7 @@ function expirySortExpr(today: string) {
 export async function fetchProducts(filters: Filters, today: string): Promise<Product[]> {
   const conditions: SQL[] = [];
   if (filters.loc && filters.loc !== "all") conditions.push(eq(products.location, filters.loc));
+  if (filters.cat && filters.cat !== "all") conditions.push(eq(products.category, filters.cat));
   if (filters.q) {
     const like = `%${filters.q}%`;
     conditions.push(or(ilike(products.name, like), ilike(products.code, like))!);
@@ -58,7 +60,7 @@ export async function fetchProducts(filters: Filters, today: string): Promise<Pr
   if (statusCond) conditions.push(statusCond);
 
   const sortKey = SORTABLE.has(filters.sort ?? "") ? filters.sort! : "expiry";
-  const sortExpr = sortKey === "expiry" ? expirySortExpr(today) : products[sortKey as "name" | "location" | "stock"];
+  const sortExpr = sortKey === "expiry" ? expirySortExpr(today) : products[sortKey as "name" | "location" | "category" | "stock"];
   const orderFn = filters.dir === "desc" ? desc : asc;
 
   const rows = await db
@@ -90,4 +92,9 @@ export async function fetchCounts(today: string): Promise<Counts> {
 export async function fetchLocations(): Promise<string[]> {
   const rows = await db.selectDistinct({ location: products.location }).from(products).orderBy(asc(products.location));
   return rows.map((r) => r.location);
+}
+
+export async function fetchCategories(): Promise<string[]> {
+  const rows = await db.selectDistinct({ category: products.category }).from(products).orderBy(asc(products.category));
+  return rows.map((r) => r.category).filter((c): c is string => !!c);
 }

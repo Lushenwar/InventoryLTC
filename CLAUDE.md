@@ -150,6 +150,7 @@ CREATE TABLE products (
   uom           TEXT    NOT NULL DEFAULT 'EA',           -- EA, BX, PK, BG, CS, etc.
   stock         INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
   location      TEXT    NOT NULL,                         -- storage room, e.g. "38 Facility Storage"
+  category      TEXT,                                    -- sorting/grouping bucket; nullable until assigned
   expiry        DATE,                                    -- nullable; most legacy items have none
   needs_expiry  BOOLEAN NOT NULL DEFAULT FALSE,          -- perishable but no date on file yet
   expired_notified BOOLEAN NOT NULL DEFAULT FALSE,       -- expired-alert already sent for this expiry; reset when expiry changes
@@ -159,6 +160,7 @@ CREATE TABLE products (
 );
 
 CREATE INDEX products_location_idx ON products (location);
+CREATE INDEX products_category_idx ON products (category);
 CREATE INDEX products_expiry_idx   ON products (expiry);
 ```
 
@@ -185,6 +187,7 @@ CREATE TABLE events (
   "code": "533-JB1324",
   "name": "Normal Saline 0.9% Sodium Chloride 1000mL",
   "location": "38 Facility Storage",
+  "category": "IV",
   "uom": "EA",
   "stock": 0,
   "expiry": "2026-08-31",
