@@ -43,6 +43,13 @@
       "when": 1784205324605,
       "tag": "0005_null_expiry_when_oos",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784900000000,
+      "tag": "0006_ppe_units_per_box",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,9 @@ export const products = pgTable("products", {
   location: text("location").notNull(),
   expiry: date("expiry"),
   needsExpiry: boolean("needs_expiry").notNull().default(false),
+  // Pieces per stocked unit (box/case), for PPE only. When set, receive/pickup take a
+  // total-pieces entry and store on-hand = pieces / units_per_box. Null for non-PPE.
+  unitsPerBox: integer("units_per_box"),
   // Set true once the "expired" alert has gone out for this item's current expiry
   // date, so the daily sweep alerts once and not every day. Reset to false whenever
   // expiry changes (receive / admin edit) so a re-dated item can alert again.
