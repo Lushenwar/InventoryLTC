@@ -413,7 +413,7 @@ export default function InventoryApp({
                     </td>
                     <td>
                       <span className={`stockcell num ${stock === 0 ? "zero" : ""}`}>
-                        {(stock * packSize(it.name)).toLocaleString()}
+                        {(stock * (it.unitsPerBox ?? packSize(it.name))).toLocaleString()}
                         <span className="u">pcs</span>
                       </span>
                     </td>
@@ -1108,6 +1108,9 @@ function ReceiveModal({
   const [cart, setCart] = useState<{ id: number; name: string; uom: string; qty: number; expiry: string | null }[]>([]);
 
   const selected = products.find((p) => p.id === prodId);
+  // PPE items (unitsPerBox set) are received as total pieces; stock is in boxes, so convert.
+  const upb = selected?.unitsPerBox ?? null;
+  const qtyBoxes = upb ? Math.round((parseInt(qty) || 0) / upb) : Math.max(1, parseInt(qty) || 0);
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = q
@@ -1118,8 +1121,7 @@ function ReceiveModal({
 
   function addLine() {
     if (!selected) return;
-    const n = Math.max(1, parseInt(qty) || 0);
-    setCart((prev) => [...prev, { id: selected.id, name: selected.name, uom: selected.uom, qty: n, expiry: recvExpiry || null }]);
+    setCart((prev) => [...prev, { id: selected.id, name: selected.name, uom: selected.uom, qty: qtyBoxes, expiry: recvExpiry || null }]);
     setSearch("");
     setProdId(0);
     setQty("1");
@@ -1129,7 +1131,7 @@ function ReceiveModal({
   // Selected-but-not-added counts as a single line, so staff can just click Receive.
   function submit() {
     const lines = cart.map((l) => ({ id: l.id, qty: l.qty, expiry: l.expiry }));
-    if (prodId) lines.push({ id: prodId, qty: Math.max(1, parseInt(qty) || 0), expiry: recvExpiry || null });
+    if (prodId) lines.push({ id: prodId, qty: qtyBoxes, expiry: recvExpiry || null });
     if (lines.length) return onReceiveMany(lines);
   }
 
@@ -1191,7 +1193,11 @@ function ReceiveModal({
               )}
             </div>
             <div className="row2">
-              <div className="field"><label>Quantity received</label><input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} /></div>
+              <div className="field">
+                <label>{upb ? "Total quantity received (pieces)" : "Quantity received"}</label>
+                <input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} />
+                {upb && selected && <span className="combo-sel">= {qtyBoxes} {selected.uom} on hand ({upb}/box)</span>}
+              </div>
               <div className="field"><label>New expiry (optional)</label><input type="date" value={recvExpiry} onChange={(e) => setRecvExpiry(e.target.value)} /></div>
             </div>
             <button className="btn" style={{ width: "100%" }} disabled={!selected} onClick={addLine}>Add another to this delivery</button>

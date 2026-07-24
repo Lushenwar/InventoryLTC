@@ -50,6 +50,13 @@
       "when": 1784554825739,
       "tag": "0006_clever_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784900000000,
+      "tag": "0007_ppe_units_per_box",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ export interface Product {
   expiry: string | null;
   needsExpiry: boolean;
   note: string;
+  unitsPerBox: number | null; // PPE only: pieces per box, drives total-qty entry in receive/pickup
 }
 
 export interface Counts {
