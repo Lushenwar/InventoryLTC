@@ -1035,13 +1035,14 @@ function PickupCart({
           <ul className="cartlist">
             {cart.map((l) => (
               <li key={l.id}>
-                <span className="cname">{l.name}{l.unitsPerBox ? <span className="sub">= {l.qty} {l.uom} ({l.unitsPerBox}/box) · {l.max} {l.uom} on hand</span> : null}</span>
+                <span className="cname">{l.name}{l.unitsPerBox ? <span className="sub">= {l.qty} {l.uom} ({(l.qty * l.unitsPerBox).toLocaleString()} pcs, {l.unitsPerBox}/box) · {l.max} {l.uom} on hand</span> : null}</span>
                 <div className="qstep">
                   {/* PPE: enter total pieces, stored qty stays boxes (pieces / unitsPerBox). Steppers move 1 box. */}
                   <button onClick={() => onQty(l.id, l.qty - 1)} aria-label="Decrease">−</button>
                   <input
                     type="number"
                     min={l.unitsPerBox ?? 1}
+                    step={l.unitsPerBox ?? 1}
                     max={l.unitsPerBox ? l.max * l.unitsPerBox : l.max}
                     value={l.unitsPerBox ? l.qty * l.unitsPerBox : l.qty}
                     aria-label={`Quantity of ${l.name}${l.unitsPerBox ? " in pieces" : ""}`}
@@ -1114,7 +1115,11 @@ function ReceiveModal({
   const selected = products.find((p) => p.id === prodId);
   // PPE items (unitsPerBox set) are received as total pieces; stock is in boxes, so convert.
   const upb = selected?.unitsPerBox ?? null;
-  const qtyBoxes = upb ? Math.round((parseInt(qty) || 0) / upb) : Math.max(1, parseInt(qty) || 0);
+  const qtyEntered = parseInt(qty) || 0;
+  // Stock is whole boxes, so a piece count that isn't a multiple of the box has to snap.
+  // Snapping is always shown in the preview below -- rounding silently would invent or
+  // destroy stock (400 pcs of a 250/box glove is 500 stored, 1 pc is nothing).
+  const qtyBoxes = upb ? Math.round(qtyEntered / upb) : Math.max(1, qtyEntered);
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = q
@@ -1124,7 +1129,7 @@ function ReceiveModal({
   }, [search, sortedProducts]);
 
   function addLine() {
-    if (!selected) return;
+    if (!selected || qtyBoxes < 1) return;
     setCart((prev) => [...prev, { id: selected.id, name: selected.name, uom: selected.uom, qty: qtyBoxes, expiry: recvExpiry || null }]);
     setSearch("");
     setProdId(0);
@@ -1135,7 +1140,7 @@ function ReceiveModal({
   // Selected-but-not-added counts as a single line, so staff can just click Receive.
   function submit() {
     const lines = cart.map((l) => ({ id: l.id, qty: l.qty, expiry: l.expiry }));
-    if (prodId) lines.push({ id: prodId, qty: qtyBoxes, expiry: recvExpiry || null });
+    if (prodId && qtyBoxes >= 1) lines.push({ id: prodId, qty: qtyBoxes, expiry: recvExpiry || null });
     if (lines.length) return onReceiveMany(lines);
   }
 
@@ -1199,8 +1204,13 @@ function ReceiveModal({
             <div className="row2">
               <div className="field">
                 <label>{upb ? "Total quantity received (pieces)" : "Quantity received"}</label>
-                <input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} />
-                {upb && selected && <span className="combo-sel">= {qtyBoxes} {selected.uom} on hand ({upb}/box)</span>}
+                <input type="number" min={upb ?? 1} step={upb ?? 1} value={qty} onChange={(e) => setQty(e.target.value)} />
+                {upb && selected && (
+                  <span className="combo-sel">
+                    = {qtyBoxes} {selected.uom} ({(qtyBoxes * upb).toLocaleString()} pcs, {upb}/box)
+                    {qtyBoxes * upb !== qtyEntered && ` — snapped from ${qtyEntered.toLocaleString()}`}
+                  </span>
+                )}
               </div>
               <div className="field"><label>New expiry (optional)</label><input type="date" value={recvExpiry} onChange={(e) => setRecvExpiry(e.target.value)} /></div>
             </div>
@@ -1251,7 +1261,7 @@ function ReceiveModal({
         <button className="btn" onClick={onClose}>Cancel</button>
         <button
           className="btn primary"
-          disabled={busy || (mode === "existing" ? cart.length === 0 && !prodId : false)}
+          disabled={busy || (mode === "existing" ? cart.length === 0 && (!prodId || qtyBoxes < 1) : false)}
           onClick={async () => {
             if (busy) return;
             setBusy(true); // blocks the double-fire; handlers close the modal on success, we clear busy on failure

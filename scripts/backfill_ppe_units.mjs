@@ -24,7 +24,8 @@ const SHEET = {
   "AAMI-601510": [60, 0], "4016": [50, 0], "DIS-320B": [50, 0], "PG4-1172": [50, 19400],
   "VM-AL02": [50, 207100], "CanGuard L3": [50, 0], "355-1870": [440, 16940],
   "355-1860": [20, 400], "355-1860S": [20, 360], "PM6-20019": [230, 0], "MDS2584": [250, 20500],
-  "MDS2587": [230, 34270], "1185-D": [300, 0], "MDS2586": [250, 0], "MDS2585": [250, 0],
+  // MDS2586: sheet says 250/bx but the product name (and the physical box) say 150 — name wins.
+"MDS2587": [230, 34270], "1185-D": [300, 0], "MDS2586": [150, 0], "MDS2585": [250, 0],
   "1185-C": [300, 0], "9985-D": [100, 0], "9994-D": [100, 36500], "9994-B": [100, 41000],
   "9994-C": [100, 0], "9985-C": [100, 45000], "9994-A": [100, 24200], "211-3206": [100, 5400],
   "211-3208": [100, 3900], "211-3205": [100, 400], "PM6-20017": [250, 80000], "203214": [50, 150],
@@ -77,6 +78,15 @@ for (const p of plan) {
 }
 const frac = plan.filter((p) => p.fromSheet && p.newStock * p.upb !== SHEET[Object.keys(SHEET).find((k) => norm(k) === norm(p.code))][1]);
 if (frac.length) console.log("\n⚠ rounded (StockBal not divisible by u/box):", frac.map((p) => `${p.code} -> ${p.newStock}`).join(", "));
+
+// The check: whenever the product name states its own pack size, it must agree with the
+// value we're about to store -- staff read the name off the physical box. A disagreement
+// means one of the two is wrong and every piece count for that row is off.
+const disagree = plan.filter((p) => packSize(p.name) > 1 && packSize(p.name) !== p.upb);
+if (disagree.length) {
+  console.log("\n⚠ NAME DISAGREES WITH u/box — verify against the physical box:");
+  for (const p of disagree) console.log(`   ${p.code || p.id}: storing ${p.upb}, name says ${packSize(p.name)} — ${p.name}`);
+} else console.log("\nok: every name-stated pack size matches the u/box being stored.");
 
 if (!APPLY) { console.log(`\nDRY RUN — ${plan.length} PPE rows. Re-run with --apply to write.`); process.exit(0); }
 
