@@ -1035,7 +1035,7 @@ function PickupCart({
           <ul className="cartlist">
             {cart.map((l) => (
               <li key={l.id}>
-                <span className="cname">{l.name}{l.unitsPerBox ? <span className="sub">= {l.qty} {l.uom} on hand ({l.unitsPerBox}/box)</span> : null}</span>
+                <span className="cname">{l.name}{l.unitsPerBox ? <span className="sub">= {l.qty} {l.uom} ({l.unitsPerBox}/box) · {l.max} {l.uom} on hand</span> : null}</span>
                 <div className="qstep">
                   {/* PPE: enter total pieces, stored qty stays boxes (pieces / unitsPerBox). Steppers move 1 box. */}
                   <button onClick={() => onQty(l.id, l.qty - 1)} aria-label="Decrease">−</button>
