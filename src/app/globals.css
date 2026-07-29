@@ -36,7 +36,7 @@
   .bar .spacer{flex:1}
   .btn{border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
     padding:8px 13px;border-radius:9px;font-weight:550;font-size:13px;display:inline-flex;
-    align-items:center;gap:7px;transition:.12s;white-space:nowrap}
+    align-items:center;gap:7px;transition:.12s;white-space:nowrap;text-decoration:none}
   .btn:hover{border-color:var(--faint);background:var(--surface-2)}
   .btn svg{width:15px;height:15px}
   .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
@@ -195,6 +195,13 @@
   .mbody{padding:14px 20px 4px}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .hint{font-size:11.5px;color:var(--muted);margin-top:5px}
+  /* Export controls wrap to their own lines on a phone; the button stays full-width there
+     so it is still a comfortable tap target in a supply room. */
+  .exportbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px;
+    padding:14px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}
+  .exportbar .field{flex:1 1 150px;margin:0}
+  .exportbar .btn{flex:0 0 auto;height:38px}
+  @media (max-width:640px){.exportbar .field{flex-basis:100%}.exportbar .btn{width:100%;justify-content:center}}
   .matchbox{margin-top:8px;border:1px solid var(--soon-soft);background:var(--soon-soft);
     border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--soon)}
   .matchbox b{color:var(--ink)}

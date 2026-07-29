@@ -69,7 +69,10 @@ export async function POST(req: NextRequest) {
       .where(eq(products.id, targetId))
       .returning();
 
-    await db.insert(events).values({ productId: targetId, kind: created ? "create" : "receive", qtyDelta: qty, expirySet: targetExpiry });
+    // Always "receive": needing a fresh sibling row is a storage detail of the same delivery.
+    // Logging it as "create" hid split-lot deliveries from anything filtering on receives,
+    // the transaction export included. "create" now means only a genuinely new product.
+    await db.insert(events).values({ productId: targetId, kind: "receive", qtyDelta: qty, expirySet: targetExpiry });
 
     return NextResponse.json(updated);
   } catch (err: unknown) {
