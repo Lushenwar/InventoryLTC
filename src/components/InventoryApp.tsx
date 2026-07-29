@@ -1132,7 +1132,7 @@ function ReceiveModal({
   const [prodId, setProdId] = useState<number>(preset?.id ?? 0);
   const [search, setSearch] = useState(preset?.name ?? "");
   const [showList, setShowList] = useState(false);
-  const [qty, setQty] = useState("1");
+  const [qty, setQty] = useState(String(preset?.unitsPerBox ?? 1));
   const [recvExpiry, setRecvExpiry] = useState("");
   const [recvMfg, setRecvMfg] = useState(""); // PPE only; writes the derived date into recvExpiry
   const [cart, setCart] = useState<{ id: number; name: string; uom: string; qty: number; expiry: string | null }[]>([]);
@@ -1144,7 +1144,14 @@ function ReceiveModal({
   // Stock is whole boxes, so a piece count that isn't a multiple of the box has to snap.
   // Snapping is always shown in the preview below -- rounding silently would invent or
   // destroy stock (400 pcs of a 250/box glove is 500 stored, 1 pc is nothing).
-  const qtyBoxes = upb ? Math.round(qtyEntered / upb) : Math.max(1, qtyEntered);
+  // Floor at one box for any non-zero entry: rounding under half a box down to 0 left
+  // Receive greyed out with nothing on screen explaining why.
+  const qtyBoxes = upb
+    ? qtyEntered > 0 ? Math.max(1, Math.round(qtyEntered / upb)) : 0
+    : Math.max(1, qtyEntered);
+  // PPE cartons always carry one of the two dates, and an undated PPE lot can't be
+  // tracked or alerted on, so require it rather than letting a dateless row through.
+  const needsDate = selected?.category === "PPE" && !recvExpiry;
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = q
@@ -1154,7 +1161,7 @@ function ReceiveModal({
   }, [search, sortedProducts]);
 
   function addLine() {
-    if (!selected || qtyBoxes < 1) return;
+    if (!selected || qtyBoxes < 1 || needsDate) return;
     setCart((prev) => [...prev, { id: selected.id, name: selected.name, uom: selected.uom, qty: qtyBoxes, expiry: recvExpiry || null }]);
     setSearch("");
     setProdId(0);
@@ -1208,12 +1215,14 @@ function ReceiveModal({
               {showList && (
                 <div className="combo-list">
                   {matches.length === 0 && <div className="combo-empty">No products match “{search}”.</div>}
+                  {/* Picking a PPE item seeds one full box: the qty field is in pieces, so a
+                      leftover "1" sits under the box size and snaps to nothing. */}
                   {matches.map((p) => (
                     <button
                       type="button"
                       key={p.id}
                       className="combo-item"
-                      onClick={() => { setProdId(p.id); setSearch(p.name); setShowList(false); }}
+                      onClick={() => { setProdId(p.id); setSearch(p.name); setShowList(false); setQty(String(p.unitsPerBox ?? 1)); }}
                     >
                       {p.name} {p.code ? `· ${p.code}` : ""}
                       <span className="sub">{p.location} · exp {p.expiry ?? "no date"} · {p.stock} {p.uom} on hand</span>
@@ -1238,7 +1247,10 @@ function ReceiveModal({
                   </span>
                 )}
               </div>
-              <div className="field"><label>New expiry (optional)</label><input type="date" value={recvExpiry} onChange={(e) => { setRecvExpiry(e.target.value); setRecvMfg(""); }} /></div>
+              <div className="field">
+                <label>{selected?.category === "PPE" ? "New expiry (required)" : "New expiry (optional)"}</label>
+                <input type="date" value={recvExpiry} onChange={(e) => { setRecvExpiry(e.target.value); setRecvMfg(""); }} />
+              </div>
             </div>
             {selected?.category === "PPE" && (
               <div className="field">
@@ -1248,13 +1260,14 @@ function ReceiveModal({
                   value={recvMfg}
                   onChange={(e) => { setRecvMfg(e.target.value); if (e.target.value) setRecvExpiry(expiryFromMfg(e.target.value, selected.name)); }}
                 />
-                <span className="combo-sel">
-                  {shelfLifeYears(selected.name)}-year shelf life
-                  {recvMfg && recvExpiry ? ` — expires ${fmtDate(recvExpiry)}` : ""}
+                <span className="combo-sel" style={needsDate ? { color: "var(--flag)" } : undefined}>
+                  {needsDate
+                    ? `Enter one of the two dates — ${shelfLifeYears(selected.name)}-year shelf life fills in the other.`
+                    : `${shelfLifeYears(selected.name)}-year shelf life${recvMfg ? ` — expires ${fmtDate(recvExpiry)}` : ""}`}
                 </span>
               </div>
             )}
-            <button className="btn" style={{ width: "100%" }} disabled={!selected} onClick={addLine}>Add another to this delivery</button>
+            <button className="btn" style={{ width: "100%" }} disabled={!selected || needsDate} onClick={addLine}>Add another to this delivery</button>
             {cart.length > 0 && (
               <ul className="cartlist">
                 {cart.map((l, i) => (
@@ -1301,7 +1314,7 @@ function ReceiveModal({
         <button className="btn" onClick={onClose}>Cancel</button>
         <button
           className="btn primary"
-          disabled={busy || (mode === "existing" ? cart.length === 0 && (!prodId || qtyBoxes < 1) : false)}
+          disabled={busy || (mode === "existing" ? needsDate || (cart.length === 0 && (!prodId || qtyBoxes < 1)) : false)}
           onClick={async () => {
             if (busy) return;
             setBusy(true); // blocks the double-fire; handlers close the modal on success, we clear busy on failure

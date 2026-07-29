@@ -46,7 +46,10 @@ export async function POST(req: NextRequest) {
       } else {
         const [row] = await db
           .insert(products)
-          .values({ code: picked.code, name: picked.name, uom: picked.uom, location: picked.location, stock: 0, expiry: targetExpiry, needsExpiry: false, note: "" })
+          // category and unitsPerBox are product attributes, not lot attributes -- a sibling
+          // lot that dropped them stopped reading as PPE, losing its piece math and its
+          // manufacture-date line. Only stock/expiry/note differ between lots.
+          .values({ code: picked.code, name: picked.name, uom: picked.uom, location: picked.location, category: picked.category, unitsPerBox: picked.unitsPerBox, stock: 0, expiry: targetExpiry, needsExpiry: false, note: "" })
           .returning({ id: products.id });
         targetId = row.id;
         created = true;
@@ -57,7 +60,10 @@ export async function POST(req: NextRequest) {
       .update(products)
       .set({
         stock: sql`${products.stock} + ${qty}`,
-        ...(fillsInDate ? { expiry: targetExpiry, needsExpiry: false, expiredNotified: false } : {}),
+        // `created` matters as much as `fillsInDate`: the sibling is inserted at stock 0,
+        // which trips the null_expiry_when_oos trigger and strips the date we just set.
+        // Re-set it here, in the statement that actually puts stock on the row.
+        ...(fillsInDate || created ? { expiry: targetExpiry, needsExpiry: false, expiredNotified: false } : {}),
         updatedAt: new Date(),
       })
       .where(eq(products.id, targetId))

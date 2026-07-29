@@ -41,6 +41,11 @@
   .btn svg{width:15px;height:15px}
   .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
   .btn.primary:hover{background:var(--primary-ink)}
+  /* Without this a blocked Receive/Save looks identical to a live one, so staff click
+     a dead button with nothing on screen telling them it is dead. */
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn:disabled:hover{border-color:var(--line-strong);background:var(--surface)}
+  .btn.primary:disabled:hover{background:var(--primary);border-color:var(--primary)}
   .btn.ghost{border-color:transparent;color:var(--muted);padding:8px 10px}
   .btn.ghost:hover{background:var(--surface-2);color:var(--ink)}
 
