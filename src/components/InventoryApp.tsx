@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { STATUS_META, daysUntil, statusOf, type StatusKey } from "@/lib/expiry";
+import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from "@/lib/expiry";
+import { isoWeekEnd, isoWeekOf, isoWeekStart, weeksInIsoYear } from "@/lib/weeks";
 import { expiryFromMfg, mfgFromExpiry, shelfLifeYears } from "@/lib/shelflife";
 import { packSize } from "@/lib/pack";
 import type { Counts, Product } from "@/lib/types";
@@ -917,6 +918,61 @@ function fmtWhen(s: string): string {
   return new Date(s).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+const shortDay = (s: string) => new Date(s + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+// Transaction export: pick a span of ISO weeks, get receives + HAA pickups as a CSV Excel
+// opens directly. A plain download link, so the browser does the saving and there's no blob
+// juggling here.
+function ExportRange() {
+  const now = useMemo(() => isoWeekOf(facilityToday()), []);
+  const [year, setYear] = useState(now.year);
+  const [fromWeek, setFromWeek] = useState(now.week);
+  const [toWeek, setToWeek] = useState(now.week);
+
+  const weekCount = weeksInIsoYear(year); // 52 or 53 -- 2026 is a 53-week year
+  // Switching to a shorter year can strand a week number past its end, so clamp on read
+  // rather than resetting the pickers under the user.
+  const start = isoWeekStart(year, Math.min(fromWeek, weekCount));
+  const end = isoWeekEnd(year, Math.min(toWeek, weekCount));
+  const weeks = Array.from({ length: weekCount }, (_, i) => i + 1);
+  const weekLabel = (w: number) => `W${w} · ${shortDay(isoWeekStart(year, w))} – ${shortDay(isoWeekEnd(year, w))}`;
+
+  return (
+    <div className="exportbar">
+      <div className="field">
+        <label htmlFor="exp-year">Year</label>
+        <select id="exp-year" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+          {[now.year, now.year - 1, now.year - 2].map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="exp-from">From week</label>
+        <select id="exp-from" value={Math.min(fromWeek, weekCount)} onChange={(e) => setFromWeek(Number(e.target.value))}>
+          {weeks.map((w) => <option key={w} value={w}>{weekLabel(w)}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="exp-to">To week</label>
+        <select id="exp-to" value={Math.min(toWeek, weekCount)} onChange={(e) => setToWeek(Number(e.target.value))}>
+          {weeks.map((w) => <option key={w} value={w}>{weekLabel(w)}</option>)}
+        </select>
+      </div>
+      <a className="btn primary" href={`/api/history/export?from=${start}&to=${end}`} download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
+        </svg>
+        Export
+      </a>
+      <span className="hint" style={{ flexBasis: "100%", marginTop: 0 }}>
+        Receives and HAA pickups from {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
+        Adding, editing, and deleting items are left out.
+      </span>
+    </div>
+  );
+}
+
 function HistoryFeed() {
   const [events, setEvents] = useState<FeedEvent[] | null>(null);
   const [error, setError] = useState(false);
@@ -950,6 +1006,7 @@ function HistoryFeed() {
   return (
     <div className="tablewrap" style={{ padding: 18 }}>
       <h2 style={{ fontSize: 15, margin: "0 0 14px" }}>Activity history</h2>
+      <ExportRange />
       <div className="field" style={{ marginBottom: 14 }}>
         <input
           value={q}
