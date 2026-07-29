@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { STATUS_META, daysUntil, statusOf, type StatusKey } from "@/lib/expiry";
+import { expiryFromMfg, mfgFromExpiry, shelfLifeYears } from "@/lib/shelflife";
 import { packSize } from "@/lib/pack";
 import type { Counts, Product } from "@/lib/types";
 import ReminderPanel from "./ReminderPanel";
@@ -421,6 +422,7 @@ export default function InventoryApp({
                     </td>
                     <td>
                       <StatusCell status={s.key} days={s.days} expiry={it.expiry} />
+                      <MfgLine it={it} today={today} />
                       {it.note && (
                         <div className="expsub" title={it.note}>
                           ⚑ {it.note.replace(/\n/g, " · ")}
@@ -601,6 +603,16 @@ function StatusCell({ status, days, expiry }: { status: StatusKey; days: number 
   return <span className={cls}><span className="d" />No expiry</span>;
 }
 
+// PPE only: boxes are stamped with a manufacture date, so show the one the
+// expiry implies. Dropped when it lands in the future -- that means the entered
+// expiry outruns the shelf life, so the derived date would be nonsense.
+function MfgLine({ it, today }: { it: Product; today: string }) {
+  if (it.category !== "PPE" || !it.expiry) return null;
+  const mfg = mfgFromExpiry(it.expiry, it.name);
+  if (mfg > today) return null;
+  return <div className="expsub">Mfg ~{fmtDate(mfg)} · {shelfLifeYears(it.name)}y shelf life</div>;
+}
+
 function EditModal({
   product,
   focusExpiry,
@@ -622,6 +634,7 @@ function EditModal({
   const [stock, setStock] = useState(String(product.stock));
   const [location, setLocation] = useState(product.location);
   const [expiry, setExpiry] = useState(product.expiry ?? "");
+  const [mfg, setMfg] = useState(""); // PPE only; writes the derived date into expiry
   const [needsExpiry, setNeedsExpiry] = useState(product.needsExpiry);
   const [note, setNote] = useState(product.note);
   const [passcode, setPasscode] = useState("");
@@ -658,8 +671,19 @@ function EditModal({
         </div>
         <div className="field">
           <label>Expiry date</label>
-          <input ref={expRef} type="date" value={expiry} autoFocus={focusExpiry} onChange={(e) => setExpiry(e.target.value)} />
+          <input ref={expRef} type="date" value={expiry} autoFocus={focusExpiry} onChange={(e) => { setExpiry(e.target.value); setMfg(""); }} />
         </div>
+        {product.category === "PPE" && (
+          <div className="field">
+            <label>…or the manufacture date stamped on the box</label>
+            <input
+              type="date"
+              value={mfg}
+              onChange={(e) => { setMfg(e.target.value); if (e.target.value) setExpiry(expiryFromMfg(e.target.value, product.name)); }}
+            />
+            <span className="combo-sel">{shelfLifeYears(product.name)}-year shelf life — fills the expiry above</span>
+          </div>
+        )}
         {expiryChanged && !unlockedPasscode && (
           <div className="field">
             <label>Admin passcode (required to change expiry)</label>
@@ -1110,6 +1134,7 @@ function ReceiveModal({
   const [showList, setShowList] = useState(false);
   const [qty, setQty] = useState("1");
   const [recvExpiry, setRecvExpiry] = useState("");
+  const [recvMfg, setRecvMfg] = useState(""); // PPE only; writes the derived date into recvExpiry
   const [cart, setCart] = useState<{ id: number; name: string; uom: string; qty: number; expiry: string | null }[]>([]);
 
   const selected = products.find((p) => p.id === prodId);
@@ -1135,6 +1160,7 @@ function ReceiveModal({
     setProdId(0);
     setQty("1");
     setRecvExpiry("");
+    setRecvMfg("");
   }
 
   // Selected-but-not-added counts as a single line, so staff can just click Receive.
@@ -1212,8 +1238,22 @@ function ReceiveModal({
                   </span>
                 )}
               </div>
-              <div className="field"><label>New expiry (optional)</label><input type="date" value={recvExpiry} onChange={(e) => setRecvExpiry(e.target.value)} /></div>
+              <div className="field"><label>New expiry (optional)</label><input type="date" value={recvExpiry} onChange={(e) => { setRecvExpiry(e.target.value); setRecvMfg(""); }} /></div>
             </div>
+            {selected?.category === "PPE" && (
+              <div className="field">
+                <label>…or the manufacture date stamped on the box</label>
+                <input
+                  type="date"
+                  value={recvMfg}
+                  onChange={(e) => { setRecvMfg(e.target.value); if (e.target.value) setRecvExpiry(expiryFromMfg(e.target.value, selected.name)); }}
+                />
+                <span className="combo-sel">
+                  {shelfLifeYears(selected.name)}-year shelf life
+                  {recvMfg && recvExpiry ? ` — expires ${fmtDate(recvExpiry)}` : ""}
+                </span>
+              </div>
+            )}
             <button className="btn" style={{ width: "100%" }} disabled={!selected} onClick={addLine}>Add another to this delivery</button>
             {cart.length > 0 && (
               <ul className="cartlist">
