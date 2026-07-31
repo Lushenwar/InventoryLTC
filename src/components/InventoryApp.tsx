@@ -928,6 +928,9 @@ function fmtWhen(s: string): string {
 
 const shortDay = (s: string) => new Date(s + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+// How an item reads in the export picker: the name, with its catalog code alongside.
+const itemLabel = (it: { name: string; code: string | null }) => (it.code ? `${it.name} · ${it.code}` : it.name);
+
 // Transaction export: pick a span of ISO weeks, get receives + HAA pickups as a CSV Excel
 // opens directly. A plain download link, so the browser does the saving and there's no blob
 // juggling here.
@@ -947,12 +950,18 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
   const weeks = Array.from({ length: weekCount }, (_, i) => i + 1);
   const weekLabel = (w: number) => `W${w} · ${shortDay(isoWeekStart(year, w))} – ${shortDay(isoWeekEnd(year, w))}`;
 
-  // Name or code, case ignored -- the box takes whichever the user knows. An exact hit is one
-  // item's ledger; anything else is a family ("nitrile", "Lrg") and mirrors what the route
-  // does, so the hint can say which sheet the button will produce before it is clicked.
+  // The picker's own "name · code" label, a bare name, or a bare code -- case ignored, the box
+  // takes whichever the user has. An exact hit is one item's ledger; anything else is a family
+  // ("nitrile", "Lrg") and mirrors what the route does, so the hint can say which sheet the
+  // button will produce before it is clicked.
   const typed = item.trim().toLowerCase();
   const picked = typed
-    ? items.find((it) => it.name.toLowerCase() === typed || (it.code ?? "").toLowerCase() === typed)
+    ? items.find(
+        (it) =>
+          itemLabel(it).toLowerCase() === typed ||
+          it.name.toLowerCase() === typed ||
+          (it.code ?? "").toLowerCase() === typed,
+      )
     : undefined;
   const family = typed && !picked
     ? items.filter((it) => it.name.toLowerCase().includes(typed) || (it.code ?? "").toLowerCase().includes(typed))
@@ -960,7 +969,10 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
 
   const params = new URLSearchParams({ from: start, to: end });
   if (kind) params.set("kind", kind);
-  if (typed) params.set("item", item.trim());
+  // The picker fills the box with "name · code", which the route does not know -- send the name
+  // it stands for. A code typed by hand is passed through untouched: that deliberately narrows
+  // to one catalog line, where the name spans every line sharing it.
+  if (typed) params.set("item", picked && typed === itemLabel(picked).toLowerCase() ? picked.name : item.trim());
 
   return (
     <div className="exportbar">
@@ -1001,16 +1013,13 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
           list="exp-items"
           value={item}
           onChange={(e) => setItem(e.target.value)}
-          placeholder="Every item — or a name, code, or group like “nitrile”"
+          placeholder="Every item — or search a name, code, or group"
           autoComplete="off"
         />
         <datalist id="exp-items">
-          {items.map((it) => (
-            <option key={it.name} value={it.name}>{it.code ?? ""}</option>
-          ))}
-          {/* Codes as their own entries too, so typing a code filters the list in every
-              browser rather than only the ones that match on an option's label. */}
-          {items.map((it) => it.code && <option key={`c${it.code}`} value={it.code}>{it.name}</option>)}
+          {/* One entry per item, with the code inside the same value -- typing either the name
+              or the code still filters, without a second entry per code to scroll past. */}
+          {items.map((it) => <option key={it.name} value={itemLabel(it)} />)}
         </datalist>
       </div>
       <a
