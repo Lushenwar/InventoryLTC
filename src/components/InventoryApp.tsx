@@ -70,6 +70,14 @@ export default function InventoryApp({
 
   const cartQty = useMemo(() => new Map(cart.map((l) => [l.id, l.qty])), [cart]);
 
+  // One entry per product name for the export picker -- lots share a name, and the export
+  // deliberately spans all of an item's lots.
+  const exportItems = useMemo(
+    () => [...new Map(allProducts.map((p) => [p.name, { name: p.name, code: p.code }])).values()]
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [allProducts],
+  );
+
   function addToCart(p: Product) {
     if (p.stock <= 0) return;
     setCart((prev) => {
@@ -314,7 +322,7 @@ export default function InventoryApp({
 
       <main className={pickupMode ? "shopping" : ""}>
         {view === "history" ? (
-          <HistoryFeed />
+          <HistoryFeed items={exportItems} />
         ) : (
         <>
         <div className="stats">
@@ -923,11 +931,13 @@ const shortDay = (s: string) => new Date(s + "T00:00:00").toLocaleDateString(und
 // Transaction export: pick a span of ISO weeks, get receives + HAA pickups as a CSV Excel
 // opens directly. A plain download link, so the browser does the saving and there's no blob
 // juggling here.
-function ExportRange() {
+function ExportRange({ items }: { items: { name: string; code: string | null }[] }) {
   const now = useMemo(() => isoWeekOf(facilityToday()), []);
   const [year, setYear] = useState(now.year);
   const [fromWeek, setFromWeek] = useState(now.week);
   const [toWeek, setToWeek] = useState(now.week);
+  const [kind, setKind] = useState(""); // "" = both directions
+  const [item, setItem] = useState(""); // "" = every item
 
   const weekCount = weeksInIsoYear(year); // 52 or 53 -- 2026 is a 53-week year
   // Switching to a shorter year can strand a week number past its end, so clamp on read
@@ -936,6 +946,16 @@ function ExportRange() {
   const end = isoWeekEnd(year, Math.min(toWeek, weekCount));
   const weeks = Array.from({ length: weekCount }, (_, i) => i + 1);
   const weekLabel = (w: number) => `W${w} · ${shortDay(isoWeekStart(year, w))} – ${shortDay(isoWeekEnd(year, w))}`;
+
+  // Name or code, case ignored -- the box takes whichever the user knows.
+  const typed = item.trim().toLowerCase();
+  const picked = typed
+    ? items.find((it) => it.name.toLowerCase() === typed || (it.code ?? "").toLowerCase() === typed)
+    : undefined;
+
+  const params = new URLSearchParams({ from: start, to: end });
+  if (kind) params.set("kind", kind);
+  if (typed) params.set("item", item.trim());
 
   return (
     <div className="exportbar">
@@ -959,21 +979,64 @@ function ExportRange() {
           {weeks.map((w) => <option key={w} value={w}>{weekLabel(w)}</option>)}
         </select>
       </div>
-      <a className="btn primary" href={`/api/history/export?from=${start}&to=${end}`} download>
+      <div className="field">
+        <label htmlFor="exp-kind">Include</label>
+        <select id="exp-kind" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="">Received and issued</option>
+          <option value="receive">Received only</option>
+          <option value="pickup">Issued only (HAA pickups)</option>
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="exp-item">Item</label>
+        {/* ponytail: native <datalist> -- types-to-filter and opens to the full list for free.
+            A combobox component would be ~200 lines to land in the same place. */}
+        <input
+          id="exp-item"
+          list="exp-items"
+          value={item}
+          onChange={(e) => setItem(e.target.value)}
+          placeholder="Every item — or type a name or code"
+          autoComplete="off"
+        />
+        <datalist id="exp-items">
+          {items.map((it) => (
+            <option key={it.name} value={it.name}>{it.code ?? ""}</option>
+          ))}
+          {/* Codes as their own entries too, so typing a code filters the list in every
+              browser rather than only the ones that match on an option's label. */}
+          {items.map((it) => it.code && <option key={`c${it.code}`} value={it.code}>{it.name}</option>)}
+        </datalist>
+      </div>
+      <a
+        className="btn primary"
+        href={typed && !picked ? undefined : `/api/history/export?${params}`}
+        aria-disabled={typed && !picked ? true : undefined}
+        download
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
         </svg>
         Export
       </a>
       <span className="hint" style={{ flexBasis: "100%", marginTop: 0 }}>
-        Receives and HAA pickups from {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
-        Adding, editing, and deleting items are left out.
+        {typed && !picked ? (
+          <span style={{ color: "var(--expired)" }}>No item matches “{item.trim()}”. Clear the box to export every item.</span>
+        ) : (
+          <>
+            {kind === "receive" ? "Receives" : kind === "pickup" ? "HAA pickups" : "Receives and HAA pickups"}
+            {picked ? ` of ${picked.name}` : ""} from {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
+            The last line totals received against issued and gives the stock on hand — pick a single
+            item for that to balance as a per-item ledger.
+            Adding, editing, and deleting items are left out.
+          </>
+        )}
       </span>
     </div>
   );
 }
 
-function HistoryFeed() {
+function HistoryFeed({ items }: { items: { name: string; code: string | null }[] }) {
   const [events, setEvents] = useState<FeedEvent[] | null>(null);
   const [error, setError] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -1006,7 +1069,7 @@ function HistoryFeed() {
   return (
     <div className="tablewrap" style={{ padding: 18 }}>
       <h2 style={{ fontSize: 15, margin: "0 0 14px" }}>Activity history</h2>
-      <ExportRange />
+      <ExportRange items={items} />
       <div className="field" style={{ marginBottom: 14 }}>
         <input
           value={q}
