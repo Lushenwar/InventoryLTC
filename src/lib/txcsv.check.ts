@@ -5,7 +5,7 @@
 // stops reproducing those two numbers from these transactions, this fails.
 import assert from "node:assert";
 import { isoWeekEnd, isoWeekStart } from "./weeks";
-import { TX_HEADER, pickupParts, txCsv, type TxRow } from "./txcsv";
+import { TX_HEADER, pickupParts, txCsv, txCsvGrouped, type TxRow } from "./txcsv";
 
 const ITEM = "Glove Nitrile blue Lrg";
 const CODE = "MDS2586";
@@ -167,4 +167,60 @@ assert.deepStrictEqual(pickupParts("HAA pickup — All units · Raymond"), { uni
 assert.deepStrictEqual(pickupParts("HAA pickup — Raymond"), { unit: "", picker: "Raymond" });
 assert.deepStrictEqual(pickupParts(null), { unit: "", picker: "" });
 
-console.log("ok: transaction export columns, week slices, direction filters, and ledger totals");
+// --- Grouped export: several items in one sheet, each balancing on its own. ---
+//
+// The case that motivated it: gloves of the same size under different pack sizes are
+// separate products, so one blended balance would mean nothing -- 250/box and 150/box do
+// not add up in pieces.
+{
+  const glove = (name: string, perBox: number, day: string, kind: string, qty: number): TxRow => ({
+    day, kind, qty, expiry: null,
+    note: kind === "pickup" ? "HAA pickup — 5W · HAA" : "",
+    name, code: null, location: FS, unitsPerBox: perBox,
+  });
+  const LRG250 = "Glove Nitrile (blue) Lrg 250/box";
+  const LRG150 = "Glove Nitrile (blue) Lrg 150/box";
+
+  // Arrives grouped by item, the way the export query orders it.
+  const out = lines(txCsvGrouped([
+    glove(LRG250, 250, "2026-07-06", "receive", 10),
+    glove(LRG250, 250, "2026-07-07", "pickup", -4),
+    glove(LRG150, 150, "2026-07-06", "receive", 20),
+    glove(LRG150, 150, "2026-07-08", "pickup", -5),
+  ]));
+
+  // header + (2 rows + 2 footer + blank) x2 + 2 grand = 13
+  assert.strictEqual(out.length, 13);
+
+  const at = (label: string) => cols(out.find((l) => l.startsWith(label))!);
+  assert.deepStrictEqual(at(`Subtotal — ${LRG250}`).slice(3, 5), ["10", "4"]);
+  assert.deepStrictEqual(at(`Stock on hand — ${LRG250}`)[3], "6");
+  assert.strictEqual(at(`Stock on hand — ${LRG250}`).at(-1), "1500"); // 6 boxes x 250
+  assert.deepStrictEqual(at(`Subtotal — ${LRG150}`).slice(3, 5), ["20", "5"]);
+  assert.strictEqual(at(`Stock on hand — ${LRG150}`)[3], "15");
+  assert.strictEqual(at(`Stock on hand — ${LRG150}`).at(-1), "2250"); // 15 boxes x 150
+
+  // Grand total is the last line, labelled with how many items it spans so nobody reads it
+  // as one product's stock.
+  assert.deepStrictEqual(cols(out.at(-2)!).slice(0, 5), ["Totals — 2 items", "", "", "30", "9"]);
+  assert.deepStrictEqual(cols(out.at(-1)!).slice(0, 4), ["Stock on hand — 2 items", "", "", "21"]);
+  assert.strictEqual(cols(out.at(-1)!).at(-1), "3750"); // 1500 + 2250, not 21 x either pack size
+
+  // A blank separator sits between blocks, but never after the grand total.
+  assert.ok(out.some((l) => /^,+$/.test(l)), "blank separator row present");
+  assert.ok(!/^,+$/.test(out.at(-1)!), "sheet does not end on a blank row");
+}
+
+// One matching item still balances, and matches the ungrouped ledger's numbers.
+{
+  const only = LEDGER.filter((r) => r.day >= "2026-06-22" && r.day <= "2026-06-28");
+  const g = lines(txCsvGrouped(only));
+  assert.deepStrictEqual(cols(g.at(-2)!).slice(0, 5), ["Totals — 1 item", "", "", "20000", "8000"]);
+  assert.strictEqual(cols(g.at(-1)!)[3], "12000");
+  assert.strictEqual(cols(g.at(-1)!)[3], footer(only).onHand, "grouped and single agree");
+}
+
+// Grand total of the whole legacy ledger is unchanged by grouping it.
+assert.deepStrictEqual(cols(lines(txCsvGrouped(LEDGER)).at(-2)!).slice(3, 5), ["100000", "79500"]);
+
+console.log("ok: transaction export columns, week slices, direction filters, ledger totals, and grouped subtotals");

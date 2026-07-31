@@ -48,55 +48,100 @@ export function pickupParts(note: string | null): { unit: string; picker: string
   return parts.length > 1 ? { unit: parts[0], picker: parts[1] } : { unit: "", picker: parts[0] ?? "" };
 }
 
-export function txCsv(rows: TxRow[]): string {
-  let recd = 0;
-  let issued = 0;
-  let piecesRecd = 0;
-  let piecesIssued = 0;
+type Cell = string | number | null;
+type Tally = { recd: number; issued: number; piecesRecd: number; piecesIssued: number };
 
-  const body = rows.map((r) => {
-    const pickup = r.kind === "pickup";
-    // Pickups are stored negative. Flip them so both columns read as plain positive
-    // quantities; a legacy negative *receive* stays negative, which is the honest reading.
-    const qty = pickup ? Math.abs(r.qty ?? 0) : r.qty ?? 0;
-    const pieces = qty * (r.unitsPerBox ?? packSize(r.name ?? ""));
-    if (pickup) {
-      issued += qty;
-      piecesIssued += pieces;
-    } else {
-      recd += qty;
-      piecesRecd += pieces;
-    }
-    const { unit, picker } = pickup ? pickupParts(r.note) : { unit: "", picker: "" };
-    return [
-      r.day,
-      r.expiry,
-      r.location,
-      pickup ? "" : qty,
-      pickup ? qty : "",
-      picker,
-      unit,
-      r.name ?? "(deleted item)",
-      r.code,
-      // A pickup's note is entirely consumed by the two columns above; repeating it is noise.
-      pickup ? "" : r.note,
-      pieces,
-    ];
-  });
+const tally = (): Tally => ({ recd: 0, issued: 0, piecesRecd: 0, piecesIssued: 0 });
 
-  // Picked by / Issued to / Item / Code / Notes are blank on both footer lines.
-  const blank = ["", "", "", "", ""];
-  const footer = [
-    // Pieces has no single meaning on the totals line (each body row mirrors one side or the
-    // other), so it only carries the net, on the stock-on-hand line.
-    ["Totals", "", "", recd, issued, ...blank, ""],
-    ["Stock on hand", "", "", recd - issued, "", ...blank, piecesRecd - piecesIssued],
+// One transaction line, counted into `t` as it is written.
+function bodyLine(r: TxRow, t: Tally): Cell[] {
+  const pickup = r.kind === "pickup";
+  // Pickups are stored negative. Flip them so both columns read as plain positive
+  // quantities; a legacy negative *receive* stays negative, which is the honest reading.
+  const qty = pickup ? Math.abs(r.qty ?? 0) : r.qty ?? 0;
+  const pieces = qty * (r.unitsPerBox ?? packSize(r.name ?? ""));
+  if (pickup) {
+    t.issued += qty;
+    t.piecesIssued += pieces;
+  } else {
+    t.recd += qty;
+    t.piecesRecd += pieces;
+  }
+  const { unit, picker } = pickup ? pickupParts(r.note) : { unit: "", picker: "" };
+  return [
+    r.day,
+    r.expiry,
+    r.location,
+    pickup ? "" : qty,
+    pickup ? qty : "",
+    picker,
+    unit,
+    r.name ?? "(deleted item)",
+    r.code,
+    // A pickup's note is entirely consumed by the two columns above; repeating it is noise.
+    pickup ? "" : r.note,
+    pieces,
   ];
+}
 
+// Picked by / Issued to / Item / Code / Notes are blank on every footer line.
+const BLANK5 = ["", "", "", "", ""];
+const EMPTY_ROW: Cell[] = TX_HEADER.map(() => "");
+
+function footer(totalLabel: string, onHandLabel: string, t: Tally): Cell[][] {
+  return [
+    // Pieces has no single meaning on a totals line (each body row mirrors one side or the
+    // other), so it only carries the net, on the stock-on-hand line.
+    [totalLabel, "", "", t.recd, t.issued, ...BLANK5, ""],
+    [onHandLabel, "", "", t.recd - t.issued, "", ...BLANK5, t.piecesRecd - t.piecesIssued],
+  ];
+}
+
+// Consecutive rows sharing an item name. The query orders by name, so a plain run-length
+// walk groups them -- no map, and the sheet keeps the query's ordering.
+function byItem(rows: TxRow[]): [string, TxRow[]][] {
+  const out: [string, TxRow[]][] = [];
+  for (const r of rows) {
+    const name = r.name ?? "(deleted item)";
+    if (out.length && out[out.length - 1][0] === name) out[out.length - 1][1].push(r);
+    else out.push([name, [r]]);
+  }
+  return out;
+}
+
+const render = (rows: Cell[][]) =>
   // BOM so Excel reads it as UTF-8; without it the "·" and accented names come out mangled.
-  return (
-    "﻿" +
-    [TX_HEADER, ...body, ...footer].map((r) => r.map(csvCell).join(",")).join("\r\n") +
-    "\r\n"
-  );
+  "﻿" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+
+/** One item's ledger: transactions, then totals and stock on hand. */
+export function txCsv(rows: TxRow[]): string {
+  const t = tally();
+  const body = rows.map((r) => bodyLine(r, t));
+  return render([TX_HEADER, ...body, ...footer("Totals", "Stock on hand", t)]);
+}
+
+/**
+ * Several items in one sheet: a block per item with its own subtotal and stock on hand,
+ * then a grand total. The per-item balances are the point -- a single blended figure across
+ * different products (and different pieces-per-box) would not be any item's real stock.
+ * `rows` must arrive grouped by item, which the export query does by ordering on name.
+ */
+export function txCsvGrouped(rows: TxRow[]): string {
+  const grand = tally();
+  const groups = byItem(rows);
+  const out: Cell[][] = [TX_HEADER];
+
+  for (const [name, group] of groups) {
+    const t = tally();
+    for (const r of group) out.push(bodyLine(r, t));
+    grand.recd += t.recd;
+    grand.issued += t.issued;
+    grand.piecesRecd += t.piecesRecd;
+    grand.piecesIssued += t.piecesIssued;
+    out.push(...footer(`Subtotal — ${name}`, `Stock on hand — ${name}`, t), EMPTY_ROW);
+  }
+
+  const n = `${groups.length} item${groups.length === 1 ? "" : "s"}`;
+  out.push(...footer(`Totals — ${n}`, `Stock on hand — ${n}`, grand));
+  return render(out);
 }
