@@ -39,23 +39,22 @@ export async function GET(req: NextRequest) {
 
   const item = searchParams.get("item")?.trim() || null;
   let itemMatch: SQL | undefined;
-  let grouped = false;
+  let groupable = false;
 
   if (item) {
     const exact = sql`(lower(${products.name}) = lower(${item}) or lower(coalesce(${products.code}, '')) = lower(${item}))`;
     const like = `%${item}%`;
     const partial = or(ilike(products.name, like), ilike(products.code, like))!;
 
-    // Distinct names decide the shape: one item reads as a ledger, several as a family sheet.
-    const names = await db.selectDistinct({ name: products.name }).from(products).where(exact);
-    if (names.length) {
+    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(products).where(exact);
+    if (n) {
       itemMatch = exact;
     } else {
-      const loose = await db.selectDistinct({ name: products.name }).from(products).where(partial);
+      const [{ n: loose }] = await db.select({ n: sql<number>`count(*)::int` }).from(products).where(partial);
       // Better a visible error than a plausible-looking empty ledger for a typo.
-      if (!loose.length) return NextResponse.json({ error: `No item matches "${item}"` }, { status: 404 });
+      if (!loose) return NextResponse.json({ error: `No item matches "${item}"` }, { status: 404 });
       itemMatch = partial;
-      grouped = loose.length > 1;
+      groupable = true;
     }
   }
 
@@ -86,7 +85,11 @@ export async function GET(req: NextRequest) {
       ),
     )
     // Grouping is a run-length walk over the rows, so the name has to lead the sort.
-    .orderBy(...(grouped ? [asc(products.name), asc(events.at)] : [asc(events.at)]));
+    .orderBy(...(groupable ? [asc(products.name), asc(events.at)] : [asc(events.at)]));
+
+  // Decided by what actually landed in the sheet, not by how many products matched: a search
+  // hitting six items where only one moved this week is that one item's ledger, not a family.
+  const grouped = groupable && new Set(rows.map((r) => r.name)).size > 1;
 
   const suffix = [
     kindParam === "receive" ? "received" : kindParam === "pickup" ? "issued" : "",
