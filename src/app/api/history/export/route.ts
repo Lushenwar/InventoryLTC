@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, inArray, sql } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
 import { txCsv } from "@/lib/txcsv";
 
@@ -7,8 +7,10 @@ import { txCsv } from "@/lib/txcsv";
 // create/edit/delete of the item records themselves -- this reports supply movement, not
 // catalogue housekeeping.
 //
-// Filters: ?kind=receive|pickup narrows to one direction, ?item=<exact product name> narrows
+// Filters: ?kind=receive|pickup narrows to one direction, ?item=<product name or code> narrows
 // to one item (all of its lots and locations, which is what makes the footer a real ledger).
+// The item match is case-insensitive but exact: a substring would quietly fold "Glove Lrg" and
+// "Glove Lrg 150/box" into one balance, and a silently wrong total is worse than no file.
 
 const FACILITY_TZ = "America/Toronto";
 
@@ -29,7 +31,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "kind must be receive or pickup" }, { status: 400 });
   }
   const kinds = kindParam ? [kindParam] : ["receive", "pickup"];
+
   const item = searchParams.get("item")?.trim() || null;
+  const itemMatch = item
+    ? sql`(lower(${products.name}) = lower(${item}) or lower(coalesce(${products.code}, '')) = lower(${item}))`
+    : undefined;
+  if (item) {
+    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(products).where(itemMatch);
+    // Better a visible error than a plausible-looking empty ledger for a typo.
+    if (!n) return NextResponse.json({ error: `No item matches "${item}"` }, { status: 404 });
+  }
 
   // Compare in facility-local days. events.at is a timestamptz, so filtering on it raw would
   // put a Monday 8pm pickup in the wrong week for anyone reading the file.
@@ -54,7 +65,7 @@ export async function GET(req: NextRequest) {
       and(
         inArray(events.kind, kinds),
         sql`${localDay} between ${start} and ${end}`,
-        item ? eq(products.name, item) : undefined,
+        itemMatch,
       ),
     )
     .orderBy(asc(events.at));
