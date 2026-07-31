@@ -947,11 +947,16 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
   const weeks = Array.from({ length: weekCount }, (_, i) => i + 1);
   const weekLabel = (w: number) => `W${w} · ${shortDay(isoWeekStart(year, w))} – ${shortDay(isoWeekEnd(year, w))}`;
 
-  // Name or code, case ignored -- the box takes whichever the user knows.
+  // Name or code, case ignored -- the box takes whichever the user knows. An exact hit is one
+  // item's ledger; anything else is a family ("nitrile", "Lrg") and mirrors what the route
+  // does, so the hint can say which sheet the button will produce before it is clicked.
   const typed = item.trim().toLowerCase();
   const picked = typed
     ? items.find((it) => it.name.toLowerCase() === typed || (it.code ?? "").toLowerCase() === typed)
     : undefined;
+  const family = typed && !picked
+    ? items.filter((it) => it.name.toLowerCase().includes(typed) || (it.code ?? "").toLowerCase().includes(typed))
+    : [];
 
   const params = new URLSearchParams({ from: start, to: end });
   if (kind) params.set("kind", kind);
@@ -996,7 +1001,7 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
           list="exp-items"
           value={item}
           onChange={(e) => setItem(e.target.value)}
-          placeholder="Every item — or type a name or code"
+          placeholder="Every item — or a name, code, or group like “nitrile”"
           autoComplete="off"
         />
         <datalist id="exp-items">
@@ -1010,8 +1015,8 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
       </div>
       <a
         className="btn primary"
-        href={typed && !picked ? undefined : `/api/history/export?${params}`}
-        aria-disabled={typed && !picked ? true : undefined}
+        href={typed && !picked && !family.length ? undefined : `/api/history/export?${params}`}
+        aria-disabled={typed && !picked && !family.length ? true : undefined}
         download
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -1020,15 +1025,17 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
         Export
       </a>
       <span className="hint" style={{ flexBasis: "100%", marginTop: 0 }}>
-        {typed && !picked ? (
+        {typed && !picked && !family.length ? (
           <span style={{ color: "var(--expired)" }}>No item matches “{item.trim()}”. Clear the box to export every item.</span>
         ) : (
           <>
             {kind === "receive" ? "Receives" : kind === "pickup" ? "HAA pickups" : "Receives and HAA pickups"}
-            {picked ? ` of ${picked.name}` : ""} from {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
-            The last line totals received against issued and gives the stock on hand — pick a single
-            item for that to balance as a per-item ledger.
-            Adding, editing, and deleting items are left out.
+            {picked ? ` of ${picked.name}` : family.length ? ` of ${family.length} items matching “${item.trim()}”` : ""} from{" "}
+            {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
+            {family.length > 1
+              ? " Each item gets its own subtotal and stock on hand, with a grand total across all of them at the end."
+              : " The last line totals received against issued and gives the stock on hand."}
+            {" "}Adding, editing, and deleting items are left out.
           </>
         )}
       </span>

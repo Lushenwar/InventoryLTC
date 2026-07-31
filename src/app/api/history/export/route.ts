@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, inArray, sql } from "drizzle-orm";
+import { and, asc, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
-import { txCsv } from "@/lib/txcsv";
+import { txCsv, txCsvGrouped } from "@/lib/txcsv";
 
 // Transaction export for a date range: receives in, HAA pickups out. Deliberately excludes
 // create/edit/delete of the item records themselves -- this reports supply movement, not
 // catalogue housekeeping.
 //
-// Filters: ?kind=receive|pickup narrows to one direction, ?item=<product name or code> narrows
-// to one item (all of its lots and locations, which is what makes the footer a real ledger).
-// The item match is case-insensitive but exact: a substring would quietly fold "Glove Lrg" and
-// "Glove Lrg 150/box" into one balance, and a silently wrong total is worse than no file.
+// Filters: ?kind=receive|pickup narrows to one direction, ?item=<name, code, or partial>
+// narrows to a product.
+//
+// An exact name/code hit is one item's ledger: its lots and locations, one balance at the
+// bottom. Anything else is read as a family -- "nitrile", "vinyl", "Lrg" -- and lands more
+// than one item in the sheet, so every item gets its own subtotal and stock on hand and only
+// the clearly-labelled grand total spans them. A single blended figure across products with
+// different pieces-per-box would not be any item's real stock, which is why a partial is
+// never folded into one balance. Matching ignores case throughout.
 
 const FACILITY_TZ = "America/Toronto";
 
@@ -33,13 +38,25 @@ export async function GET(req: NextRequest) {
   const kinds = kindParam ? [kindParam] : ["receive", "pickup"];
 
   const item = searchParams.get("item")?.trim() || null;
-  const itemMatch = item
-    ? sql`(lower(${products.name}) = lower(${item}) or lower(coalesce(${products.code}, '')) = lower(${item}))`
-    : undefined;
+  let itemMatch: SQL | undefined;
+  let grouped = false;
+
   if (item) {
-    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(products).where(itemMatch);
-    // Better a visible error than a plausible-looking empty ledger for a typo.
-    if (!n) return NextResponse.json({ error: `No item matches "${item}"` }, { status: 404 });
+    const exact = sql`(lower(${products.name}) = lower(${item}) or lower(coalesce(${products.code}, '')) = lower(${item}))`;
+    const like = `%${item}%`;
+    const partial = or(ilike(products.name, like), ilike(products.code, like))!;
+
+    // Distinct names decide the shape: one item reads as a ledger, several as a family sheet.
+    const names = await db.selectDistinct({ name: products.name }).from(products).where(exact);
+    if (names.length) {
+      itemMatch = exact;
+    } else {
+      const loose = await db.selectDistinct({ name: products.name }).from(products).where(partial);
+      // Better a visible error than a plausible-looking empty ledger for a typo.
+      if (!loose.length) return NextResponse.json({ error: `No item matches "${item}"` }, { status: 404 });
+      itemMatch = partial;
+      grouped = loose.length > 1;
+    }
   }
 
   // Compare in facility-local days. events.at is a timestamptz, so filtering on it raw would
@@ -68,13 +85,17 @@ export async function GET(req: NextRequest) {
         itemMatch,
       ),
     )
-    .orderBy(asc(events.at));
+    // Grouping is a run-length walk over the rows, so the name has to lead the sort.
+    .orderBy(...(grouped ? [asc(products.name), asc(events.at)] : [asc(events.at)]));
 
-  const suffix = [kindParam === "receive" ? "received" : kindParam === "pickup" ? "issued" : "", item ? "item" : ""]
+  const suffix = [
+    kindParam === "receive" ? "received" : kindParam === "pickup" ? "issued" : "",
+    item ? (grouped ? "group" : "item") : "",
+  ]
     .filter(Boolean)
     .join("-");
 
-  return new NextResponse(txCsv(rows), {
+  return new NextResponse(grouped ? txCsvGrouped(rows) : txCsv(rows), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="steward-transactions${suffix ? `-${suffix}` : ""}_${start}_to_${end}.csv"`,
