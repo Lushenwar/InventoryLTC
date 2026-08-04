@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, sql } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
+import { adminGate } from "@/lib/admin";
 
 // A "lot" is a (product, expiry) pair. Receiving stock with a *different* expiry than
 // the picked row must not overwrite that row's date -- it lands on its own sibling row
@@ -8,6 +9,9 @@ import { db, products, events } from "@/lib/db";
 // place; a blank date on an undated row just adds quantity; a date on an undated row
 // fills the date in.
 export async function POST(req: NextRequest) {
+  const denied = adminGate(req, "receive stock");
+  if (denied) return denied;
+
   const body = await req.json();
   const id = Number(body.id);
   const qty = Number(body.qty);

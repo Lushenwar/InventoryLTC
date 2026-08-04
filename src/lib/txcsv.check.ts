@@ -5,7 +5,7 @@
 // stops reproducing those two numbers from these transactions, this fails.
 import assert from "node:assert";
 import { isoWeekEnd, isoWeekStart } from "./weeks";
-import { TX_HEADER, pickupParts, txCsv, txCsvGrouped, type TxRow } from "./txcsv";
+import { TX_HEADER, pickupParts, sheetPieces, sheetUnits, txCsv, txCsvGrouped, type TxRow } from "./txcsv";
 
 const ITEM = "Glove Nitrile blue Lrg";
 const CODE = "MDS2586";
@@ -73,14 +73,18 @@ assert.deepStrictEqual(TX_HEADER.slice(0, 7), [
 // --- The whole ledger: the totals the legacy sheet's bottom row shows. ---
 {
   const out = lines(txCsv(LEDGER));
-  assert.strictEqual(out.length, 1 + LEDGER.length + 2, "header + rows + totals + stock on hand");
+  assert.strictEqual(out.length, 1 + LEDGER.length + 3, "header + rows + opening + totals + stock on hand");
 
+  const opening = cols(out.at(-3)!);
   const totals = cols(out.at(-2)!);
   const onHand = cols(out.at(-1)!);
   assert.strictEqual(totals[0], "Totals");
   assert.strictEqual(totals[3], "100000");
   assert.strictEqual(totals[4], "79500");
-  // Stock on hand is the very last line: received minus issued, T-account style.
+  // Stock on hand is the very last line. With no live stock supplied it is the range's net,
+  // off an opening of zero -- T-account style, the way the legacy sheet read.
+  assert.strictEqual(opening[0], "Opening stock");
+  assert.strictEqual(opening[3], "0");
   assert.strictEqual(onHand[0], "Stock on hand");
   assert.strictEqual(onHand[3], "20500");
   assert.strictEqual(Number(totals[3]) - Number(totals[4]), Number(onHand[3]));
@@ -107,7 +111,7 @@ function footer(rows: TxRow[]): { recd: string; issued: string; onHand: string; 
     recd: cols(out.at(-2)!)[3],
     issued: cols(out.at(-2)!)[4],
     onHand: cols(out.at(-1)!)[3],
-    count: out.length - 3,
+    count: out.length - 4,
   };
 }
 
@@ -137,7 +141,7 @@ assert.deepStrictEqual(footer(inWeeks(2026, 10, 28)), { recd: "100000", issued: 
   assert.strictEqual(onlyRecd.length + onlyIssued.length, LEDGER.length);
 }
 
-// --- Pieces: PPE is stocked in boxes but counted in pieces. ---
+// --- Pieces: PPE is stocked in boxes but received, issued and reported in pieces. ---
 {
   const box = (kind: string, qty: number): TxRow => ({
     day: "2026-07-06", kind, qty, expiry: null, note: kind === "pickup" ? "HAA pickup — 5W · HAA" : "",
@@ -147,9 +151,49 @@ assert.deepStrictEqual(footer(inWeeks(2026, 10, 28)), { recd: "100000", issued: 
   assert.strictEqual(cols(out[1]).at(-1), "1200"); // 12 boxes received
   assert.strictEqual(cols(out[2]).at(-1), "500"); //  5 boxes issued
   assert.strictEqual(cols(out.at(-1)!).at(-1), "700"); // net pieces on hand
-  // unitsPerBox null falls back to the pack size parsed from the name.
-  assert.strictEqual(cols(lines(txCsv([{ ...box("receive", 2), unitsPerBox: null }]))[1]).at(-1), "200");
+  // The quantity columns carry pieces too, not the box count -- that is what was physically
+  // received and picked up, and what the legacy sheet recorded.
+  assert.strictEqual(cols(out[1])[3], "1200", "PPE received in pieces");
+  assert.strictEqual(cols(out[2])[4], "500", "PPE issued in pieces");
+  assert.deepStrictEqual(cols(out.at(-2)!).slice(3, 5), ["1200", "500"]);
+  assert.strictEqual(cols(out.at(-1)!)[3], "700");
+  // unitsPerBox null falls back to the pack size parsed from the name -- but only for the
+  // Pieces column. A non-PPE item keeps reporting its stocked unit in the quantity columns.
+  const loose = lines(txCsv([{ ...box("receive", 2), unitsPerBox: null }]));
+  assert.strictEqual(cols(loose[1]).at(-1), "200");
+  assert.strictEqual(cols(loose[1])[3], "2", "non-PPE quantity stays in stocked units");
 }
+
+// --- Real stock on hand: the closing line is what is on the shelf, opening is read back. ---
+//
+// The case that motivated it: receive 250 masks then pick up 250 in the same week. The net is
+// zero, but the shelf still holds the 9,000 it started with, and a sheet reading "0" hides a
+// discrepancy instead of exposing one.
+{
+  const mask = (kind: string, qty: number): TxRow => ({
+    day: "2026-07-06", kind, qty, expiry: null, note: kind === "pickup" ? "HAA pickup — 5W · HAA" : "",
+    name: "Mask Procedure Medium", code: "M1", location: FS, unitsPerBox: 50,
+  });
+  // 9,000 pieces on hand now = 180 boxes of 50.
+  const out = lines(txCsv([mask("receive", 5), mask("pickup", -5)], { units: 9_000, pieces: 9_000 }));
+  assert.deepStrictEqual(cols(out.at(-2)!).slice(3, 5), ["250", "250"], "250 in, 250 out");
+  assert.strictEqual(cols(out.at(-3)!)[3], "9000", "opening = closing minus the net");
+  assert.strictEqual(cols(out.at(-1)!)[3], "9000", "closing is the real shelf count, not the net");
+
+  // Opening + received - issued = on hand, on a week that actually moved the needle.
+  const up = lines(txCsv([mask("receive", 10)], { units: 9_500, pieces: 9_500 }));
+  assert.strictEqual(cols(up.at(-3)!)[3], "9000");
+  assert.strictEqual(cols(up.at(-1)!)[3], "9500");
+
+  // A quiet week for a stocked item reports the stock, not a zeroed sheet.
+  assert.strictEqual(cols(lines(txCsv([], { units: 9_000, pieces: 9_000 })).at(-1)!)[3], "9000");
+}
+
+// Live stock converts to the sheet's two units the same way the body rows do.
+assert.strictEqual(sheetUnits(180, 50), 9_000); // PPE: pieces
+assert.strictEqual(sheetUnits(180, null), 180); // everything else: stocked units
+assert.strictEqual(sheetPieces(180, 50, "Mask 50/box"), 9_000);
+assert.strictEqual(sheetPieces(6, null, "Glove Nitrile 250/box"), 1_500); // pack size off the name
 
 // --- Escaping and note parsing. ---
 {
@@ -189,22 +233,43 @@ assert.deepStrictEqual(pickupParts(null), { unit: "", picker: "" });
     glove(LRG150, 150, "2026-07-08", "pickup", -5),
   ]));
 
-  // header + (2 rows + 2 footer + blank) x2 + 2 grand = 13
-  assert.strictEqual(out.length, 13);
+  // header + (2 rows + 3 footer + blank) x2 + 3 grand = 16
+  assert.strictEqual(out.length, 16);
 
   const at = (label: string) => cols(out.find((l) => l.startsWith(label))!);
-  assert.deepStrictEqual(at(`Subtotal — ${LRG250}`).slice(3, 5), ["10", "4"]);
-  assert.deepStrictEqual(at(`Stock on hand — ${LRG250}`)[3], "6");
-  assert.strictEqual(at(`Stock on hand — ${LRG250}`).at(-1), "1500"); // 6 boxes x 250
-  assert.deepStrictEqual(at(`Subtotal — ${LRG150}`).slice(3, 5), ["20", "5"]);
-  assert.strictEqual(at(`Stock on hand — ${LRG150}`)[3], "15");
-  assert.strictEqual(at(`Stock on hand — ${LRG150}`).at(-1), "2250"); // 15 boxes x 150
+  // Both are PPE, so every quantity here is in pieces: 10 boxes of 250 is 2,500 received.
+  assert.deepStrictEqual(at(`Subtotal — ${LRG250}`).slice(3, 5), ["2500", "1000"]);
+  assert.strictEqual(at(`Stock on hand — ${LRG250}`)[3], "1500"); // 6 boxes x 250
+  assert.strictEqual(at(`Stock on hand — ${LRG250}`).at(-1), "1500");
+  assert.deepStrictEqual(at(`Subtotal — ${LRG150}`).slice(3, 5), ["3000", "750"]);
+  assert.strictEqual(at(`Stock on hand — ${LRG150}`)[3], "2250"); // 15 boxes x 150
+  assert.strictEqual(at(`Stock on hand — ${LRG150}`).at(-1), "2250");
 
   // Grand total is the last line, labelled with how many items it spans so nobody reads it
   // as one product's stock.
-  assert.deepStrictEqual(cols(out.at(-2)!).slice(0, 5), ["Totals — 2 items", "", "", "30", "9"]);
-  assert.deepStrictEqual(cols(out.at(-1)!).slice(0, 4), ["Stock on hand — 2 items", "", "", "21"]);
+  assert.deepStrictEqual(cols(out.at(-2)!).slice(0, 5), ["Totals — 2 items", "", "", "5500", "1750"]);
+  assert.deepStrictEqual(cols(out.at(-1)!).slice(0, 4), ["Stock on hand — 2 items", "", "", "3750"]);
   assert.strictEqual(cols(out.at(-1)!).at(-1), "3750"); // 1500 + 2250, not 21 x either pack size
+
+  // With live stock per item, each block closes on its own shelf count and the grand total is
+  // the sum of them -- never a blended net across two different pack sizes.
+  const stocked = lines(txCsvGrouped(
+    [
+      glove(LRG250, 250, "2026-07-06", "receive", 10),
+      glove(LRG250, 250, "2026-07-07", "pickup", -10), // nets to zero, shelf is not empty
+      glove(LRG150, 150, "2026-07-06", "receive", 20),
+    ],
+    new Map([
+      [LRG250, { units: 5_000, pieces: 5_000 }],
+      [LRG150, { units: 4_500, pieces: 4_500 }],
+    ]),
+  ));
+  const st = (label: string) => cols(stocked.find((l) => l.startsWith(label))!);
+  assert.strictEqual(st(`Opening stock — ${LRG250}`)[3], "5000", "net zero leaves the opening alone");
+  assert.strictEqual(st(`Stock on hand — ${LRG250}`)[3], "5000");
+  assert.strictEqual(st(`Opening stock — ${LRG150}`)[3], "1500"); // 4500 - 3000 received
+  assert.strictEqual(st(`Stock on hand — ${LRG150}`)[3], "4500");
+  assert.strictEqual(cols(stocked.at(-1)!)[3], "9500", "grand total is the sum of the blocks");
 
   // A blank separator sits between blocks, but never after the grand total.
   assert.ok(out.some((l) => /^,+$/.test(l)), "blank separator row present");

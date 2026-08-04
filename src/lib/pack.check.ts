@@ -1,6 +1,6 @@
 // Run: npx tsx src/lib/pack.check.ts
 import assert from "node:assert";
-import { packSize } from "./pack";
+import { packSize, snapQty } from "./pack";
 
 const cases: [string, number][] = [
   ["0.9% sodium chloride ... flush syringe, 30/box", 30],
@@ -25,4 +25,25 @@ const cases: [string, number][] = [
 for (const [name, want] of cases) {
   assert.strictEqual(packSize(name), want, `${name} -> expected ${want}, got ${packSize(name)}`);
 }
-console.log(`ok: ${cases.length} cases pass`);
+
+// --- snapQty: a typed piece count -> whole boxes. 300/box, 20 boxes (6,000 pieces) on hand. ---
+const snap = (n: number) => snapQty(n, 300, 20);
+
+assert.deepStrictEqual(snap(900), { boxes: 3, warn: null }, "an exact multiple passes through");
+// The case from the report: 1000 lands on 900, never 1200.
+assert.strictEqual(snap(1000).boxes, 3);
+assert.match(snap(1000).warn!, /isn't a whole box of 300 — using 900/);
+assert.strictEqual(snap(1199).boxes, 3, "rounds down, not to nearest");
+assert.strictEqual(snap(1200).boxes, 4);
+// Under one box still picks one -- a part box cannot leave the shelf.
+assert.strictEqual(snap(1).boxes, 1);
+assert.strictEqual(snap(299).boxes, 1);
+// Over what is on hand clamps to the maximum and says so, rather than snapping first.
+assert.strictEqual(snap(45_000).boxes, 20);
+assert.match(snap(45_000).warn!, /Only 6,000 pcs on hand/);
+assert.deepStrictEqual(snap(6_000), { boxes: 20, warn: null }, "exactly the maximum is not a warning");
+// No box size: the item is counted in its stocked unit, so only the clamp can move it.
+assert.deepStrictEqual(snapQty(7, null, 20), { boxes: 7, warn: null });
+assert.strictEqual(snapQty(999, null, 20, "EA").boxes, 20);
+
+console.log(`ok: ${cases.length} pack-size cases and the pickup quantity snap`);

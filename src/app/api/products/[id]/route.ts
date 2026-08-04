@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
-import { verifyAdminPasscode } from "@/lib/admin";
+import { adminGate } from "@/lib/admin";
 
 // Per-item history: this product's event timeline, newest first.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -12,6 +12,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // Every field is gated now, not just the expiry date: staff should not be able to correct
+  // a count or a name out from under the record either.
+  const denied = adminGate(req, "edit a product");
+  if (denied) return denied;
+
   const { id: idParam } = await params;
   const id = Number(idParam);
   const body = await req.json();
@@ -33,19 +38,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const note = body.note !== undefined ? String(body.note).trim() : existing.note;
 
   const expiryChanged = expiry !== existing.expiry;
-  if (expiryChanged && !verifyAdminPasscode(req.headers.get("x-admin-passcode"))) {
-    return NextResponse.json({ error: "Admin passcode required to change the expiry date" }, { status: 403 });
-  }
 
   const [updated] = await db
     .update(products)
-    .set({ name, code, uom, stock, location, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: expiryChanged ? "admin" : existing.updatedBy, ...(expiryChanged ? { expiredNotified: false } : {}) })
+    .set({ name, code, uom, stock, location, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: "admin", ...(expiryChanged ? { expiredNotified: false } : {}) })
     .where(eq(products.id, id))
     .returning();
 
   const newEvents: (typeof events.$inferInsert)[] = [];
   if (stock !== existing.stock) {
-    newEvents.push({ productId: id, kind: "adjust", qtyDelta: stock - existing.stock });
+    newEvents.push({ productId: id, kind: "adjust", qtyDelta: stock - existing.stock, actor: "admin" });
   }
   if (expiryChanged) {
     newEvents.push({ productId: id, kind: "set_expiry", expirySet: expiry, actor: "admin" });
@@ -56,12 +58,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = adminGate(req, "delete a product");
+  if (denied) return denied;
+
   const { id: idParam } = await params;
   const id = Number(idParam);
-
-  if (!verifyAdminPasscode(req.headers.get("x-admin-passcode"))) {
-    return NextResponse.json({ error: "Admin passcode required to delete a product" }, { status: 403 });
-  }
 
   const [existing] = await db.select().from(products).where(eq(products.id, id)).limit(1);
   if (!existing) return NextResponse.json({ error: "Product not found" }, { status: 404 });

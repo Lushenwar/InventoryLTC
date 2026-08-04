@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, asc, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
-import { txCsv, txCsvGrouped } from "@/lib/txcsv";
+import { sheetPieces, sheetUnits, txCsv, txCsvGrouped, type OnHand } from "@/lib/txcsv";
 
 // Transaction export for a date range: receives in, HAA pickups out. Deliberately excludes
 // create/edit/delete of the item records themselves -- this reports supply movement, not
@@ -16,6 +16,11 @@ import { txCsv, txCsvGrouped } from "@/lib/txcsv";
 // the clearly-labelled grand total spans them. A single blended figure across products with
 // different pieces-per-box would not be any item's real stock, which is why a partial is
 // never folded into one balance. Matching ignores case throughout.
+//
+// A filtered sheet closes on the item's *real* current stock and reverse-engineers the opening
+// balance from it, so a week that received 250 and issued 250 reads "9000 -> 9000" instead of
+// "0" -- a wrong count shows up as a wrong number rather than a plausible one. An unfiltered
+// export has no single balance worth reporting, so it keeps the plain received-minus-issued net.
 
 const FACILITY_TZ = "America/Toronto";
 
@@ -91,6 +96,28 @@ export async function GET(req: NextRequest) {
   // hitting six items where only one moved this week is that one item's ledger, not a family.
   const grouped = groupable && new Set(rows.map((r) => r.name)).size > 1;
 
+  // Real current stock, so the sheet closes on what is actually on the shelf and the opening
+  // balance is read back from it. Summed across the item's lot rows -- lots are a storage
+  // detail, the ledger is per product. Only for a filtered export: across all 377 products a
+  // single "stock on hand" figure would be a number with no meaning attached to it.
+  let onHand: Map<string, OnHand> | undefined;
+  if (item) {
+    const stocked = await db
+      .select({ name: products.name, stock: products.stock, unitsPerBox: products.unitsPerBox })
+      .from(products)
+      .where(itemMatch);
+    onHand = new Map();
+    for (const p of stocked) {
+      const cur = onHand.get(p.name) ?? { units: 0, pieces: 0 };
+      cur.units += sheetUnits(p.stock, p.unitsPerBox);
+      cur.pieces += sheetPieces(p.stock, p.unitsPerBox, p.name);
+      onHand.set(p.name, cur);
+    }
+  }
+  const onHandTotal = onHand
+    ? [...onHand.values()].reduce((a, b) => ({ units: a.units + b.units, pieces: a.pieces + b.pieces }), { units: 0, pieces: 0 })
+    : undefined;
+
   const suffix = [
     kindParam === "receive" ? "received" : kindParam === "pickup" ? "issued" : "",
     item ? (grouped ? "group" : "item") : "",
@@ -98,7 +125,7 @@ export async function GET(req: NextRequest) {
     .filter(Boolean)
     .join("-");
 
-  return new NextResponse(grouped ? txCsvGrouped(rows) : txCsv(rows), {
+  return new NextResponse(grouped ? txCsvGrouped(rows, onHand) : txCsv(rows, onHandTotal), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="steward-transactions${suffix ? `-${suffix}` : ""}_${start}_to_${end}.csv"`,
