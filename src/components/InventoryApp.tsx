@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from "@/lib/expiry";
 import { isoWeekEnd, isoWeekOf, isoWeekStart, weeksInIsoYear } from "@/lib/weeks";
 import { expiryFromMfg, mfgFromExpiry, shelfLifeYears } from "@/lib/shelflife";
-import { packSize } from "@/lib/pack";
+import { packSize, snapQty } from "@/lib/pack";
 import type { Counts, Product } from "@/lib/types";
 import ReminderPanel from "./ReminderPanel";
 
@@ -25,7 +25,9 @@ type ModalState =
   | { type: "receive"; mode: "existing" | "new"; presetId?: number }
   | { type: "remove"; product: Product }
   | { type: "history"; product: Product }
-  | { type: "admin" };
+  // `then` is the action that was blocked: unlocking opens it, so the passcode is asked for
+  // once, up front, instead of once per modal after the form has already been filled in.
+  | { type: "admin"; then?: ModalState };
 
 // qty/max are always in stock units (boxes). For PPE (unitsPerBox set) the pickup UI
 // enters/shows total pieces and converts to boxes; the stored qty stays boxes.
@@ -100,6 +102,14 @@ export default function InventoryApp({
     else sessionStorage.removeItem(ADMIN_SESSION_KEY);
   }
 
+  // Every product write is admin-only; only HAA pickup is open. Asking for the passcode
+  // before the modal opens keeps the "which fields need it" logic out of every form.
+  function guard(next: ModalState) {
+    setModal(adminPasscode ? next : { type: "admin", then: next });
+  }
+
+  const adminHeaders = (extra?: Record<string, string>) => ({ ...extra, "x-admin-passcode": adminPasscode ?? "" });
+
   useEffect(() => {
     const header = document.querySelector("header.app");
     if (!header) return;
@@ -161,7 +171,7 @@ export default function InventoryApp({
   async function submitCreate(payload: Record<string, unknown>) {
     const res = await fetch("/api/products", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: adminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -181,7 +191,7 @@ export default function InventoryApp({
     for (const l of lines) {
       const res = await fetch("/api/receive", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: adminHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(l),
       });
       oks.push(res.ok);
@@ -199,7 +209,7 @@ export default function InventoryApp({
   async function submitRemove(payload: { id: number; qty: number; reason: string }) {
     const res = await fetch("/api/remove", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: adminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -232,10 +242,10 @@ export default function InventoryApp({
     return true;
   }
 
-  async function submitEdit(id: number, payload: Record<string, unknown>, passcode: string) {
+  async function submitEdit(id: number, payload: Record<string, unknown>) {
     const res = await fetch(`/api/products/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-admin-passcode": passcode },
+      headers: adminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -248,8 +258,8 @@ export default function InventoryApp({
     showToast("Saved changes");
   }
 
-  async function submitDelete(id: number, name: string, passcode: string) {
-    const res = await fetch(`/api/products/${id}`, { method: "DELETE", headers: { "x-admin-passcode": passcode } });
+  async function submitDelete(id: number, name: string) {
+    const res = await fetch(`/api/products/${id}`, { method: "DELETE", headers: adminHeaders() });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       showToast(body.error || "Could not delete product");
@@ -298,10 +308,10 @@ export default function InventoryApp({
             <button className={view === "history" ? "on" : ""} onClick={() => setView("history")}>History</button>
           </div>
           <div className="spacer" />
-          <button className="btn" onClick={() => setModal({ type: "receive", mode: "new" })}>
+          <button className="btn" onClick={() => guard({ type: "receive", mode: "new" })}>
             + New product
           </button>
-          <button className="btn primary" onClick={() => setModal({ type: "receive", mode: "existing" })}>
+          <button className="btn primary" onClick={() => guard({ type: "receive", mode: "existing" })}>
             Receive supply
           </button>
           <button
@@ -312,7 +322,7 @@ export default function InventoryApp({
           </button>
           <button
             className="btn"
-            title={adminPasscode ? "Admin mode unlocked -- click to lock" : "Unlock admin actions (set expiry, delete)"}
+            title={adminPasscode ? "Admin mode unlocked -- click to lock" : "Unlock admin actions (receive, edit, remove, delete)"}
             onClick={() => (adminPasscode ? setAdminPasscode(null) : setModal({ type: "admin" }))}
           >
             {adminPasscode ? "Admin ✓" : "Admin"}
@@ -441,16 +451,35 @@ export default function InventoryApp({
                     <td>
                       {pickupMode ? (
                         <div className="rowbtns">
-                          <button className="btn addbtn" disabled={stock === 0} onClick={() => addToCart(it)}>
-                            {cartQty.has(it.id) ? `In cart · ${it.unitsPerBox ? `${cartQty.get(it.id)! * it.unitsPerBox} pcs` : cartQty.get(it.id)}` : stock === 0 ? "No stock" : "Add"}
-                          </button>
+                          {cartQty.has(it.id) ? (
+                            // Once it's in the cart, adjust from the row itself -- no reaching
+                            // over to the dock. One step is one box, i.e. unitsPerBox pieces.
+                            <div className="qstep">
+                              <button onClick={() => setCartQty(it.id, cartQty.get(it.id)! - 1)} aria-label={`Remove one from ${it.name}`}>−</button>
+                              <span className="qval num">
+                                {(cartQty.get(it.id)! * (it.unitsPerBox ?? 1)).toLocaleString()}
+                                <span className="u">{it.unitsPerBox ? "pcs" : it.uom}</span>
+                              </span>
+                              <button
+                                onClick={() => setCartQty(it.id, cartQty.get(it.id)! + 1)}
+                                disabled={cartQty.get(it.id)! >= stock}
+                                aria-label={`Add one more ${it.name}`}
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button className="btn addbtn" disabled={stock === 0} onClick={() => addToCart(it)}>
+                              {stock === 0 ? "No stock" : "Add"}
+                            </button>
+                          )}
                         </div>
                       ) : (
                       <div className="rowbtns">
                         <button
                           className={`iconbtn ${!it.expiry ? "set" : ""}`}
                           title="Set expiry date"
-                          onClick={() => setModal({ type: "edit", product: it, focusExpiry: true })}
+                          onClick={() => guard({ type: "edit", product: it, focusExpiry: true })}
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                             <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
@@ -459,7 +488,7 @@ export default function InventoryApp({
                         <button
                           className="iconbtn"
                           title="Add received stock"
-                          onClick={() => setModal({ type: "receive", mode: "existing", presetId: it.id })}
+                          onClick={() => guard({ type: "receive", mode: "existing", presetId: it.id })}
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 5v14M5 12h14" />
@@ -469,18 +498,18 @@ export default function InventoryApp({
                           className="iconbtn"
                           title="Remove / use stock"
                           disabled={stock === 0}
-                          onClick={() => setModal({ type: "remove", product: it })}
+                          onClick={() => guard({ type: "remove", product: it })}
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                             <path d="M5 12h14" />
                           </svg>
                         </button>
-                        <button className="iconbtn" title="Edit" onClick={() => setModal({ type: "edit", product: it })}>
+                        <button className="iconbtn" title="Edit" onClick={() => guard({ type: "edit", product: it })}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z" />
                           </svg>
                         </button>
-                        <button className="iconbtn" title="Delete" onClick={() => setModal({ type: "delete", product: it })}>
+                        <button className="iconbtn" title="Delete" onClick={() => guard({ type: "delete", product: it })}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                             <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" />
                           </svg>
@@ -520,17 +549,15 @@ export default function InventoryApp({
           product={modal.product}
           focusExpiry={modal.focusExpiry}
           locations={locations}
-          unlockedPasscode={adminPasscode}
           onClose={() => setModal({ type: "closed" })}
-          onSave={(payload, passcode) => submitEdit(modal.product.id, payload, passcode)}
+          onSave={(payload) => submitEdit(modal.product.id, payload)}
         />
       )}
       {modal.type === "delete" && (
         <DeleteModal
           product={modal.product}
-          unlockedPasscode={adminPasscode}
           onClose={() => setModal({ type: "closed" })}
-          onConfirm={(passcode) => submitDelete(modal.product.id, modal.product.name, passcode)}
+          onConfirm={() => submitDelete(modal.product.id, modal.product.name)}
         />
       )}
       {modal.type === "receive" && (
@@ -555,6 +582,7 @@ export default function InventoryApp({
         <PickupCart
           cart={cart}
           onQty={setCartQty}
+          onWarn={showToast}
           onClose={() => setPickupMode(false)}
           onSubmit={submitPickup}
         />
@@ -564,10 +592,12 @@ export default function InventoryApp({
       )}
       {modal.type === "admin" && (
         <AdminUnlockModal
+          next={modal.then}
           onClose={() => setModal({ type: "closed" })}
           onUnlock={(code) => {
             setAdminPasscode(code);
-            setModal({ type: "closed" });
+            // Straight into whatever was blocked, so unlocking isn't a dead end.
+            setModal(modal.then ?? { type: "closed" });
             showToast("Admin mode unlocked");
           }}
         />
@@ -622,20 +652,20 @@ function MfgLine({ it, today }: { it: Product; today: string }) {
   return <div className="expsub">Mfg ~{fmtDate(mfg)} · {shelfLifeYears(it.name)}y shelf life</div>;
 }
 
+// Only reachable with admin unlocked -- InventoryApp's `guard` asks for the passcode before
+// the form opens, so there is no per-field passcode prompt in here any more.
 function EditModal({
   product,
   focusExpiry,
   locations,
-  unlockedPasscode,
   onClose,
   onSave,
 }: {
   product: Product;
   focusExpiry?: boolean;
   locations: string[];
-  unlockedPasscode: string | null;
   onClose: () => void;
-  onSave: (payload: Record<string, unknown>, passcode: string) => void;
+  onSave: (payload: Record<string, unknown>) => void;
 }) {
   const [name, setName] = useState(product.name);
   const [code, setCode] = useState(product.code ?? "");
@@ -646,9 +676,7 @@ function EditModal({
   const [mfg, setMfg] = useState(""); // PPE only; writes the derived date into expiry
   const [needsExpiry, setNeedsExpiry] = useState(product.needsExpiry);
   const [note, setNote] = useState(product.note);
-  const [passcode, setPasscode] = useState("");
   const expRef = useRef<HTMLInputElement>(null);
-  const expiryChanged = (expiry || null) !== (product.expiry ?? null);
 
   return (
     <Overlay onClose={onClose}>
@@ -693,12 +721,6 @@ function EditModal({
             <span className="combo-sel">{shelfLifeYears(product.name)}-year shelf life — fills the expiry above</span>
           </div>
         )}
-        {expiryChanged && !unlockedPasscode && (
-          <div className="field">
-            <label>Admin passcode (required to change expiry)</label>
-            <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} placeholder="Enter admin passcode" />
-          </div>
-        )}
         <label className="chk">
           <input type="checkbox" checked={needsExpiry} onChange={(e) => setNeedsExpiry(e.target.checked)} disabled={!!expiry} />
           This item needs an expiry date (flag for review)
@@ -713,19 +735,16 @@ function EditModal({
         <button
           className="btn primary"
           onClick={() =>
-            onSave(
-              {
-                name: name.trim(),
-                code: code.trim(),
-                uom: uom.trim() || "EA",
-                stock: Math.max(0, parseInt(stock) || 0),
-                location,
-                expiry: expiry || null,
-                needsExpiry,
-                note: note.trim(),
-              },
-              unlockedPasscode ?? passcode,
-            )
+            onSave({
+              name: name.trim(),
+              code: code.trim(),
+              uom: uom.trim() || "EA",
+              stock: Math.max(0, parseInt(stock) || 0),
+              location,
+              expiry: expiry || null,
+              needsExpiry,
+              note: note.trim(),
+            })
           }
         >
           Save changes
@@ -737,16 +756,13 @@ function EditModal({
 
 function DeleteModal({
   product,
-  unlockedPasscode,
   onClose,
   onConfirm,
 }: {
   product: Product;
-  unlockedPasscode: string | null;
   onClose: () => void;
-  onConfirm: (passcode: string) => void;
+  onConfirm: () => void;
 }) {
-  const [passcode, setPasscode] = useState("");
   return (
     <Overlay onClose={onClose}>
       <div className="mh">
@@ -762,19 +778,13 @@ function DeleteModal({
         <p style={{ margin: "4px 0 8px" }}>
           Remove <b>{product.name || "this item"}</b> {product.code ? `(${product.code})` : ""} from {product.location}?
         </p>
-        {!unlockedPasscode && (
-          <div className="field">
-            <label>Admin passcode</label>
-            <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} placeholder="Enter admin passcode" />
-          </div>
-        )}
       </div>
       <div className="mfoot">
         <button className="btn" onClick={onClose}>Keep it</button>
         <button
           className="btn"
           style={{ background: "var(--expired)", borderColor: "var(--expired)", color: "#fff" }}
-          onClick={() => onConfirm(unlockedPasscode ?? passcode)}
+          onClick={onConfirm}
         >
           Delete
         </button>
@@ -1042,9 +1052,11 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
             {picked ? ` of ${picked.name}` : family.length ? ` of ${family.length} items matching “${item.trim()}”` : ""} from{" "}
             {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
             {family.length > 1
-              ? " Each item gets its own subtotal and stock on hand, with a grand total across all of them at the end."
-              : " The last line totals received against issued and gives the stock on hand."}
-            {" "}Adding, editing, and deleting items are left out.
+              ? " Each item gets its own opening stock, subtotal and closing stock on hand, with a grand total across all of them at the end."
+              : picked || family.length
+                ? " The last lines read opening stock, received against issued, then the stock actually on hand today."
+                : " The last line totals received against issued."}
+            {" "}PPE quantities are in pieces. Adding, editing, and deleting items are left out.
           </>
         )}
       </span>
@@ -1151,24 +1163,70 @@ function HistoryFeed({ items }: { items: { name: string; code: string | null }[]
   );
 }
 
+// Free-typed quantity for one cart line. The value is held as a draft string while it is being
+// typed -- committing on every keystroke would snap "1" of a 300/box item to 300 before the
+// rest of "1000" arrived. On blur/Enter it snaps to whole boxes and clamps to what is on hand,
+// with a toast whenever the number it lands on isn't the number that was typed.
+function QtyInput({
+  line,
+  onQty,
+  onWarn,
+}: {
+  line: CartLine;
+  onQty: (id: number, qty: number) => void;
+  onWarn: (msg: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const per = line.unitsPerBox ?? 1;
+  const shown = line.qty * per;
+  const unit = line.unitsPerBox ? "pcs" : line.uom;
+
+  function commit(raw: string) {
+    setDraft(null); // fall back to the committed value; a blank or junk entry just reverts
+    const v = parseInt(raw, 10);
+    if (!Number.isFinite(v) || v <= 0) return;
+    const { boxes, warn } = snapQty(v, line.unitsPerBox, line.max, unit);
+    onQty(line.id, boxes);
+    if (warn) onWarn(warn);
+  }
+
+  return (
+    <input
+      type="number"
+      min={per}
+      step={per}
+      max={line.max * per}
+      value={draft ?? String(shown)}
+      aria-label={`Quantity of ${line.name} in ${unit}`}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={(e) => commit(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+    />
+  );
+}
+
 // Always-open cart dock (right sidebar on desktop, bottom sheet on mobile). Staff browse/sort/
 // filter the table freely and hit "Add" on any row; the cart lives in InventoryApp so it survives
 // every navigation. One "Record pickup" writes the whole order.
 function PickupCart({
   cart,
   onQty,
+  onWarn,
   onClose,
   onSubmit,
 }: {
   cart: CartLine[];
   onQty: (id: number, qty: number) => void;
+  onWarn: (msg: string) => void;
   onClose: () => void;
   onSubmit: (unit: string, picker: string) => Promise<boolean>;
 }) {
   const [unit, setUnit] = useState("");
   const [picker, setPicker] = useState("");
   const [busy, setBusy] = useState(false);
-  const totalUnits = cart.reduce((s, l) => s + l.qty, 0);
+  // Pieces, matching what the lines and the export now report -- a box count here read as
+  // "3 units" next to a line saying "900 pcs" was just two numbers for the same thing.
+  const totalPieces = cart.reduce((s, l) => s + l.qty * (l.unitsPerBox ?? 1), 0);
   const ready = cart.length > 0 && !!unit.trim() && !!picker.trim();
 
   async function record() {
@@ -1185,7 +1243,7 @@ function PickupCart({
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
         </svg>
-        <div><h2>HAA pickup</h2><p>{cart.length} item(s) · {totalUnits} units</p></div>
+        <div><h2>HAA pickup</h2><p>{cart.length} item(s) · {totalPieces.toLocaleString()} pcs</p></div>
         <button className="x" title="Close cart" onClick={onClose}>×</button>
       </div>
       <div className="cartdock-b">
@@ -1199,20 +1257,7 @@ function PickupCart({
                 <div className="qstep">
                   {/* PPE: enter total pieces, stored qty stays boxes (pieces / unitsPerBox). Steppers move 1 box. */}
                   <button onClick={() => onQty(l.id, l.qty - 1)} aria-label="Decrease">−</button>
-                  <input
-                    type="number"
-                    min={l.unitsPerBox ?? 1}
-                    step={l.unitsPerBox ?? 1}
-                    max={l.unitsPerBox ? l.max * l.unitsPerBox : l.max}
-                    value={l.unitsPerBox ? l.qty * l.unitsPerBox : l.qty}
-                    aria-label={`Quantity of ${l.name}${l.unitsPerBox ? " in pieces" : ""}`}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value);
-                      if (Number.isNaN(v)) return; // ignore empty/partial while typing; × removes a line
-                      const boxes = l.unitsPerBox ? Math.round(v / l.unitsPerBox) : v;
-                      onQty(l.id, Math.min(Math.max(1, boxes), l.max));
-                    }}
-                  />
+                  <QtyInput line={l} onQty={onQty} onWarn={onWarn} />
                   <button onClick={() => onQty(l.id, l.qty + 1)} disabled={l.qty >= l.max} aria-label="Increase">+</button>
                 </div>
                 <button className="cx" title="Remove" onClick={() => onQty(l.id, 0)}>×</button>
@@ -1481,7 +1526,14 @@ function ReceiveModal({
   );
 }
 
-function AdminUnlockModal({ onClose, onUnlock }: { onClose: () => void; onUnlock: (code: string) => void }) {
+const MODAL_TITLES: Record<string, string> = {
+  edit: "edit this product",
+  delete: "delete this product",
+  receive: "receive supply",
+  remove: "remove stock",
+};
+
+function AdminUnlockModal({ next, onClose, onUnlock }: { next?: ModalState; onClose: () => void; onUnlock: (code: string) => void }) {
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -1511,7 +1563,14 @@ function AdminUnlockModal({ onClose, onUnlock }: { onClose: () => void; onUnlock
             <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" />
           </svg>
         </div>
-        <div><h2>Unlock admin mode</h2><p>Needed to override an expiry date or delete a product</p></div>
+        <div>
+          <h2>Unlock admin mode</h2>
+          <p>
+            {next && MODAL_TITLES[next.type]
+              ? `Needed to ${MODAL_TITLES[next.type]}`
+              : "Needed to change stock or product records"}
+          </p>
+        </div>
         <button className="x" onClick={onClose}>×</button>
       </div>
       <div className="mbody">
@@ -1527,7 +1586,10 @@ function AdminUnlockModal({ onClose, onUnlock }: { onClose: () => void; onUnlock
           />
         </div>
         {error && <div className="hint" style={{ color: "var(--expired)" }}>{error}</div>}
-        <div className="hint">Stays unlocked for this browser tab until you lock it again or close the tab.</div>
+        <div className="hint">
+          Stays unlocked for this browser tab until you lock it again or close the tab.
+          Recording an <b>HAA pickup</b> never needs it.
+        </div>
       </div>
       <div className="mfoot">
         <button className="btn" onClick={onClose}>Cancel</button>

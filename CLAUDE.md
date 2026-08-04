@@ -311,12 +311,19 @@ steward/
 
 **Original exit criterion (superseded):** Staff log in via Clerk/Auth.js/Supabase Auth, admins vs. general staff as distinct accounts.
 
-**What shipped instead:** The user decided full per-user accounts weren't worth it for this facility ("I don't really care who uses the website... add a very very simple one for updating"). Descoped to a single shared admin passcode (`ADMIN_PASSCODE` env var, compared with a timing-safe check in `lib/admin.ts`) gating exactly the two actions the original criterion called out as admin-only:
+**What shipped instead:** The user decided full per-user accounts weren't worth it for this facility ("I don't really care who uses the website... add a very very simple one for updating"). Descoped to a single shared admin passcode (`ADMIN_PASSCODE` env var, compared with a timing-safe check in `lib/admin.ts`).
 
-* Overriding an item's expiry date (`PATCH /api/products/[id]` requires the `x-admin-passcode` header only when `expiry` actually changes).
-* Deleting a product (`DELETE /api/products/[id]` always requires it).
+**Widened 2026-07-31, by explicit user decision** ("change it so that all actions require the admin passcode so that they cant edit the numbers and quanity or delete them. Only the haa pickup."). The gate (`adminGate` in `lib/admin.ts`, checking the `x-admin-passcode` header) now covers **every write that touches a product record**:
 
-Receive, create, and editing name/stock/location/note stay open for regular staff, no login required. Successful admin-gated actions record `actor: "admin"` on the `events` row and `updated_by: "admin"` on the product (there's no per-user identity to record beyond that).
+* `POST /api/products` — create
+* `POST /api/receive` — receive stock
+* `PATCH /api/products/[id]` — edit anything, not just the expiry date
+* `POST /api/remove` — remove/use stock
+* `DELETE /api/products/[id]` — delete
+
+**`POST /api/haa-pickup` is the one open write.** Floor staff record their own pickups without a passcode; that is the whole point of the cart.
+
+Client-side the passcode is asked for *before* the modal opens (`guard()` in `InventoryApp`, which stashes the blocked action on the admin modal and opens it after unlocking), so no form carries its own inline passcode field any more. Successful admin actions record `actor: "admin"` on the `events` row and `updated_by: "admin"` on the product (there's no per-user identity to record beyond that).
 
 **Explicitly accepted tradeoff:** no rate-limiting on passcode attempts. Acceptable given the low blast radius (no PHI, no financial data, no destructive automation) -- revisit if that risk profile changes.
 

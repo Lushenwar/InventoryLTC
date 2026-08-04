@@ -15,3 +15,29 @@ export function packSize(name: string): number {
   const n = m ? parseInt(m[1], 10) : 1;
   return n > 0 ? n : 1;
 }
+
+export type Snap = { boxes: number; warn: string | null };
+
+/**
+ * A freely typed quantity -> the whole boxes actually pickable, plus the message to show
+ * when the entry had to move. Stock is boxes, so anything between two box counts has to snap.
+ *
+ * Rounds *down* -- 1000 pieces of a 300/box item is 900, not 1200: never hand out more than
+ * was asked for. Floors at one box, because a fraction of a box cannot be picked, and clamps
+ * to what is on hand. `unitsPerBox` null means the item is counted in its stocked unit, where
+ * the only thing that can move is the clamp.
+ */
+export function snapQty(entered: number, unitsPerBox: number | null, maxBoxes: number, unit = "pcs"): Snap {
+  const per = unitsPerBox ?? 1;
+  const maxPieces = maxBoxes * per;
+  if (entered > maxPieces) {
+    return { boxes: maxBoxes, warn: `Only ${maxPieces.toLocaleString()} ${unit} on hand — set to the maximum.` };
+  }
+  const boxes = Math.max(1, Math.floor(entered / per));
+  const landed = boxes * per;
+  if (landed === entered) return { boxes, warn: null };
+  return {
+    boxes,
+    warn: `${entered.toLocaleString()} ${unit} isn't a whole box of ${per} — using ${landed.toLocaleString()}.`,
+  };
+}

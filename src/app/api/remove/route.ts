@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
+import { adminGate } from "@/lib/admin";
 
 // Remove/consume stock from a specific lot row (used, wasted, expired-pulled, count fix).
-// Open to all staff -- routine daily work -- but every removal is logged to `events` with
-// its reason. Atomic `stock = stock - qty`; the non-negative CHECK stops over-removal.
+// Admin-gated along with every other count-changing write -- staff record what they take
+// through HAA pickup, which stays open. Every removal is logged to `events` with its reason.
+// Atomic `stock = stock - qty`; the non-negative CHECK stops over-removal.
 export async function POST(req: NextRequest) {
+  const denied = adminGate(req, "remove stock");
+  if (denied) return denied;
+
   const body = await req.json();
   const id = Number(body.id);
   const qty = Number(body.qty);

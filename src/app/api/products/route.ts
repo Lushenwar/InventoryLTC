@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, products, events } from "@/lib/db";
+import { adminGate } from "@/lib/admin";
 
 export async function POST(req: NextRequest) {
+  const denied = adminGate(req, "add a product");
+  if (denied) return denied;
+
   const body = await req.json();
   const name = String(body.name ?? "").trim();
   const location = String(body.location ?? "").trim();

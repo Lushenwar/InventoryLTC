@@ -1,6 +1,14 @@
-// Transaction ledger CSV. One line per receive / HAA pickup, then a totals line and a
-// stock-on-hand line: received minus issued, so a single-item export balances like a
-// T-account the way the legacy sheet did.
+// Transaction ledger CSV. One line per receive / HAA pickup, then an opening-stock line, a
+// totals line and a closing stock-on-hand line, so an export balances like a T-account the
+// way the legacy sheet did: opening + received − issued = on hand.
+//
+// The closing figure is the item's *real* current stock when the caller knows it (`OnHand`),
+// and the opening balance is reverse-engineered back from it. A week where 250 masks came in
+// and 250 went out then reads "9000 → 9000", not "0" -- which is what makes a wrong number
+// visible instead of plausible.
+//
+// PPE (`unitsPerBox` set) is received and issued in pieces, so its quantity columns carry
+// pieces, not boxes. Everything else stays in its stocked unit.
 //
 // ponytail: CSV, not a real .xlsx. Excel opens it natively, so a spreadsheet writer would be
 // a dependency earning nothing. Switch to exceljs only if formulas or multiple sheets are wanted.
@@ -51,6 +59,19 @@ export function pickupParts(note: string | null): { unit: string; picker: string
 type Cell = string | number | null;
 type Tally = { recd: number; issued: number; piecesRecd: number; piecesIssued: number };
 
+/**
+ * An item's live stock, in the same two units the sheet reports:
+ * `units` matches the quantity columns (pieces for PPE, boxes otherwise),
+ * `pieces` matches the Pieces column. See `sheetUnits` / `sheetPieces`.
+ */
+export type OnHand = { units: number; pieces: number };
+
+/** Stock as the quantity columns count it: pieces for PPE, the stocked unit otherwise. */
+export const sheetUnits = (stock: number, unitsPerBox: number | null) => stock * (unitsPerBox ?? 1);
+/** Stock as the Pieces column counts it -- pack size parsed from the name when not stored. */
+export const sheetPieces = (stock: number, unitsPerBox: number | null, name: string) =>
+  stock * (unitsPerBox ?? packSize(name));
+
 const tally = (): Tally => ({ recd: 0, issued: 0, piecesRecd: 0, piecesIssued: 0 });
 
 // One transaction line, counted into `t` as it is written.
@@ -60,11 +81,14 @@ function bodyLine(r: TxRow, t: Tally): Cell[] {
   // quantities; a legacy negative *receive* stays negative, which is the honest reading.
   const qty = pickup ? Math.abs(r.qty ?? 0) : r.qty ?? 0;
   const pieces = qty * (r.unitsPerBox ?? packSize(r.name ?? ""));
+  // PPE moves in pieces, so that is what its quantity column reports -- a box count there
+  // does not match what staff actually picked up or the legacy sheet recorded.
+  const shown = r.unitsPerBox ? pieces : qty;
   if (pickup) {
-    t.issued += qty;
+    t.issued += shown;
     t.piecesIssued += pieces;
   } else {
-    t.recd += qty;
+    t.recd += shown;
     t.piecesRecd += pieces;
   }
   const { unit, picker } = pickup ? pickupParts(r.note) : { unit: "", picker: "" };
@@ -72,8 +96,8 @@ function bodyLine(r: TxRow, t: Tally): Cell[] {
     r.day,
     r.expiry,
     r.location,
-    pickup ? "" : qty,
-    pickup ? qty : "",
+    pickup ? "" : shown,
+    pickup ? shown : "",
     picker,
     unit,
     r.name ?? "(deleted item)",
@@ -88,12 +112,25 @@ function bodyLine(r: TxRow, t: Tally): Cell[] {
 const BLANK5 = ["", "", "", "", ""];
 const EMPTY_ROW: Cell[] = TX_HEADER.map(() => "");
 
-function footer(totalLabel: string, onHandLabel: string, t: Tally): Cell[][] {
+/**
+ * Opening stock, the range's movements, then closing stock -- in that reading order.
+ *
+ * `on` is the item's real current stock; the opening balance is it minus the range's net, so
+ * the three lines always tie out. Without it (an unfiltered export spanning many products,
+ * where no single balance would mean anything) the sheet falls back to opening 0 and a plain
+ * received-minus-issued net, which is what it always reported.
+ */
+function footer(labels: [string, string, string], t: Tally, on?: OnHand): Cell[][] {
+  const net = t.recd - t.issued;
+  const netPieces = t.piecesRecd - t.piecesIssued;
+  const units = on ? on.units : net;
+  const pieces = on ? on.pieces : netPieces;
   return [
+    [labels[0], "", "", units - net, "", ...BLANK5, pieces - netPieces],
     // Pieces has no single meaning on a totals line (each body row mirrors one side or the
-    // other), so it only carries the net, on the stock-on-hand line.
-    [totalLabel, "", "", t.recd, t.issued, ...BLANK5, ""],
-    [onHandLabel, "", "", t.recd - t.issued, "", ...BLANK5, t.piecesRecd - t.piecesIssued],
+    // other), so it is left to the two balance lines.
+    [labels[1], "", "", t.recd, t.issued, ...BLANK5, ""],
+    [labels[2], "", "", units, "", ...BLANK5, pieces],
   ];
 }
 
@@ -113,21 +150,24 @@ const render = (rows: Cell[][]) =>
   // BOM so Excel reads it as UTF-8; without it the "·" and accented names come out mangled.
   "﻿" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 
-/** One item's ledger: transactions, then totals and stock on hand. */
-export function txCsv(rows: TxRow[]): string {
+/** One item's ledger: transactions, then opening stock, totals and stock on hand. */
+export function txCsv(rows: TxRow[], onHand?: OnHand): string {
   const t = tally();
   const body = rows.map((r) => bodyLine(r, t));
-  return render([TX_HEADER, ...body, ...footer("Totals", "Stock on hand", t)]);
+  return render([TX_HEADER, ...body, ...footer(["Opening stock", "Totals", "Stock on hand"], t, onHand)]);
 }
 
 /**
- * Several items in one sheet: a block per item with its own subtotal and stock on hand,
- * then a grand total. The per-item balances are the point -- a single blended figure across
- * different products (and different pieces-per-box) would not be any item's real stock.
+ * Several items in one sheet: a block per item with its own opening stock, subtotal and stock
+ * on hand, then a grand total. The per-item balances are the point -- a single blended figure
+ * across different products (and different pieces-per-box) would not be any item's real stock.
  * `rows` must arrive grouped by item, which the export query does by ordering on name.
+ *
+ * `onHand` is keyed by product name; items missing from it fall back to the range's net.
  */
-export function txCsvGrouped(rows: TxRow[]): string {
+export function txCsvGrouped(rows: TxRow[], onHand?: Map<string, OnHand>): string {
   const grand = tally();
+  const grandOn = onHand ? { units: 0, pieces: 0 } : undefined;
   const groups = byItem(rows);
   const out: Cell[][] = [TX_HEADER];
 
@@ -138,10 +178,18 @@ export function txCsvGrouped(rows: TxRow[]): string {
     grand.issued += t.issued;
     grand.piecesRecd += t.piecesRecd;
     grand.piecesIssued += t.piecesIssued;
-    out.push(...footer(`Subtotal — ${name}`, `Stock on hand — ${name}`, t), EMPTY_ROW);
+    const on = onHand?.get(name);
+    if (grandOn && on) {
+      grandOn.units += on.units;
+      grandOn.pieces += on.pieces;
+    }
+    out.push(
+      ...footer([`Opening stock — ${name}`, `Subtotal — ${name}`, `Stock on hand — ${name}`], t, on),
+      EMPTY_ROW,
+    );
   }
 
   const n = `${groups.length} item${groups.length === 1 ? "" : "s"}`;
-  out.push(...footer(`Totals — ${n}`, `Stock on hand — ${n}`, grand));
+  out.push(...footer([`Opening stock — ${n}`, `Totals — ${n}`, `Stock on hand — ${n}`], grand, grandOn));
   return render(out);
 }
