@@ -111,10 +111,8 @@
   .chip.on .cnt{opacity:.85}
 
   /* ---- table ---- */
-  /* Legacy product names run to 70+ characters. Without this the table is wider than a phone
-     and the whole page scrolls sideways, which makes the row buttons hard to hit. */
   .tablewrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;
-    box-shadow:var(--shadow);overflow-x:auto}
+    box-shadow:var(--shadow)}
   thead th:first-child{border-top-left-radius:12px}
   thead th:last-child{border-top-right-radius:12px}
   table{width:100%;border-collapse:collapse}
@@ -122,6 +120,16 @@
     color:var(--muted);font-weight:650;padding:11px 14px;border-bottom:1px solid var(--line);
     background:var(--surface-2);position:sticky;top:var(--hdr-h,63px);z-index:5;white-space:nowrap;cursor:pointer;user-select:none}
   thead th.no-sort{cursor:default}
+  /* The table cannot go narrower than ~690px, so on a phone it scrolls inside its own box
+     rather than dragging the whole page sideways and putting the row buttons out of reach.
+     Scoped to narrow screens on purpose: overflow-x makes overflow-y compute to auto, which
+     turns this into a scroll container and re-bases the sticky header on it -- at the wide
+     screen's top:var(--hdr-h) that drops the header 86px down, straight over the first row.
+     Where it does scroll, the header pins to the wrapper's own top instead. */
+  @media(max-width:980px){
+    .tablewrap{overflow-x:auto}
+    thead th{top:0}
+  }
   thead th .arr{opacity:.4;font-size:10px;margin-left:3px}
   tbody td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
   tbody tr:last-child td{border-bottom:none}
