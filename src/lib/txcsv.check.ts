@@ -303,4 +303,58 @@ assert.deepStrictEqual(cols(lines(txCsvGrouped(LEDGER)).at(-2)!).slice(3, 5), ["
   assert.strictEqual(cols(lines(txCsvGrouped([]))[1])[0], "No transactions in this date range");
 }
 
-console.log("ok: transaction export columns, week slices, direction filters, ledger totals, and grouped subtotals");
+// --- Stock removals and new-product creates are movement, and must appear. ---
+//
+// The bug: the export carried only receives and pickups, so an admin removing stock ("Expired —
+// pulled") or creating a product with an opening count moved stock that the columns never showed.
+// The closing balance still reflected it, so the opening was reverse-engineered into nonsense --
+// one real glove line reported an opening stock of -135,000.
+{
+  const ev = (kind: string, qty: number, note: string | null = null): TxRow => ({
+    day: "2026-07-06", kind, qty, expiry: null, note,
+    name: "Gauze Pad 4x4", code: "G44", location: FS, unitsPerBox: null,
+  });
+
+  // 900 in, 900 pulled off the shelf, nothing left. This is the exact shape that produced the
+  // negative opening balance in production.
+  const out = lines(txCsv([ev("receive", 900), ev("adjust", -900, "Expired — pulled")], { units: 0, pieces: 0 }));
+  assert.deepStrictEqual(cols(out.at(-2)!).slice(3, 5), ["900", "900"], "the removal lands in Qty issued");
+  assert.strictEqual(cols(out.at(-3)!)[3], "0", "opening is 0, not -900");
+  assert.strictEqual(cols(out.at(-1)!)[3], "0");
+
+  // An adjustment's note is its reason, so unlike a pickup's it is kept.
+  assert.strictEqual(cols(out[2])[9], "Expired — pulled");
+  assert.strictEqual(cols(out[2])[4], "900", "negative adjust = issued");
+
+  // A correction upwards is stock arriving.
+  const up = lines(txCsv([ev("adjust", 40, "Count correction")]));
+  assert.strictEqual(cols(up[1])[3], "40", "positive adjust = received");
+  assert.strictEqual(cols(up[1])[4], "", "...and nothing in the issued column");
+
+  // A new product's opening count is stock arriving too.
+  const made = lines(txCsv([ev("create", 25)]));
+  assert.strictEqual(cols(made[1])[3], "25", "a create carries stock in");
+
+  // The whole point: opening + received - issued = on hand, on a mixed range.
+  const mixed = lines(txCsv(
+    [ev("create", 100), ev("receive", 50), ev("pickup", -30), ev("adjust", -20, "Used"), ev("adjust", 5, "Count correction")],
+    { units: 480, pieces: 480 },
+  ));
+  const [open, tot, close] = [cols(mixed.at(-3)!), cols(mixed.at(-2)!), cols(mixed.at(-1)!)];
+  assert.deepStrictEqual(tot.slice(3, 5), ["155", "50"], "100+50+5 in, 30+20 out");
+  assert.strictEqual(open[3], "375");
+  assert.strictEqual(close[3], "480");
+  assert.strictEqual(Number(open[3]) + Number(tot[3]) - Number(tot[4]), Number(close[3]), "the ledger balances");
+}
+
+// A pickup still swallows its note into the two people columns; only adjustments keep theirs.
+{
+  const p = lines(txCsv([{
+    day: "2026-07-06", kind: "pickup", qty: -5, expiry: null, note: "HAA pickup — 5W · Sany",
+    name: "Mask", code: null, location: FS, unitsPerBox: null,
+  }]));
+  assert.deepStrictEqual(cols(p[1]).slice(5, 7), ["Sany", "5W"]);
+  assert.strictEqual(cols(p[1])[9], "", "the pickup note is not repeated");
+}
+
+console.log("ok: transaction export columns, week slices, direction filters, ledger totals, grouped subtotals, and removals/creates balancing");

@@ -74,36 +74,48 @@ export const sheetPieces = (stock: number, unitsPerBox: number | null, name: str
 
 const tally = (): Tally => ({ recd: 0, issued: 0, piecesRecd: 0, piecesIssued: 0 });
 
+/**
+ * Which way an event moved stock.
+ *
+ * A pickup always takes stock off the shelf. An adjustment goes either way -- negative for used,
+ * wasted, expired-pulled or a downward count fix; positive for a correction upwards. A receive or
+ * a create puts stock on, keeping its sign, so a legacy negative receive still reads as negative
+ * rather than being flipped into the issued column.
+ */
+const isIssue = (r: TxRow) => r.kind === "pickup" || (r.kind === "adjust" && (r.qty ?? 0) < 0);
+
 // One transaction line, counted into `t` as it is written.
 function bodyLine(r: TxRow, t: Tally): Cell[] {
-  const pickup = r.kind === "pickup";
-  // Pickups are stored negative. Flip them so both columns read as plain positive
-  // quantities; a legacy negative *receive* stays negative, which is the honest reading.
-  const qty = pickup ? Math.abs(r.qty ?? 0) : r.qty ?? 0;
+  const issued = isIssue(r);
+  // Pickups and negative adjustments are stored negative. Flip them so both columns read as
+  // plain positive quantities.
+  const qty = issued ? Math.abs(r.qty ?? 0) : r.qty ?? 0;
   const pieces = qty * (r.unitsPerBox ?? packSize(r.name ?? ""));
   // PPE moves in pieces, so that is what its quantity column reports -- a box count there
   // does not match what staff actually picked up or the legacy sheet recorded.
   const shown = r.unitsPerBox ? pieces : qty;
-  if (pickup) {
+  if (issued) {
     t.issued += shown;
     t.piecesIssued += pieces;
   } else {
     t.recd += shown;
     t.piecesRecd += pieces;
   }
-  const { unit, picker } = pickup ? pickupParts(r.note) : { unit: "", picker: "" };
+  const isPickup = r.kind === "pickup";
+  const { unit, picker } = isPickup ? pickupParts(r.note) : { unit: "", picker: "" };
   return [
     r.day,
     r.expiry,
     r.location,
-    pickup ? "" : shown,
-    pickup ? shown : "",
+    issued ? "" : shown,
+    issued ? shown : "",
     picker,
     unit,
     r.name ?? "(deleted item)",
     r.code,
     // A pickup's note is entirely consumed by the two columns above; repeating it is noise.
-    pickup ? "" : r.note,
+    // An adjustment's note is the opposite -- it is the reason the stock moved, so it stays.
+    isPickup ? "" : r.note,
     pieces,
   ];
 }

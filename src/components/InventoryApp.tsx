@@ -1053,8 +1053,8 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
         <label htmlFor="exp-kind">Include</label>
         <select id="exp-kind" value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">Received and issued</option>
-          <option value="receive">Received only</option>
-          <option value="pickup">Issued only (HAA pickups)</option>
+          <option value="receive">Received only (deliveries, corrections up)</option>
+          <option value="pickup">Issued only (pickups, removals)</option>
         </select>
       </div>
       <div className="field">
@@ -1091,7 +1091,7 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
           <span style={{ color: "var(--expired)" }}>No item matches “{item.trim()}”. Clear the box to export every item.</span>
         ) : (
           <>
-            {kind === "receive" ? "Receives" : kind === "pickup" ? "HAA pickups" : "Receives and HAA pickups"}
+            {kind === "receive" ? "Stock in" : kind === "pickup" ? "Stock out" : "Stock in and out"}
             {picked ? ` of ${picked.name}` : family.length ? ` of ${family.length} items matching “${item.trim()}”` : ""} from{" "}
             {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
             {family.length > 1
@@ -1099,7 +1099,9 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
               : picked || family.length
                 ? " The last lines read opening stock, received against issued, then the stock actually on hand today."
                 : " The last line totals received against issued."}
-            {" "}PPE quantities are in pieces. Adding, editing, and deleting items are left out.
+            {" "}PPE quantities are in pieces. Every movement counts: deliveries, HAA pickups, stock
+            removed or corrected, and what a new product was first logged with. Renaming and deleting
+            items are left out — they don’t change a count.
           </>
         )}
       </span>
