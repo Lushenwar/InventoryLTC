@@ -1,4 +1,4 @@
-# Steward
+# Inventory Date
 
 Shared inventory and expiry-tracking tool for the facility's floor supply rooms. Live at **https://stouffvilleinventory.vercel.app**.
 

@@ -1052,7 +1052,7 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
             {picked ? ` of ${picked.name}` : family.length ? ` of ${family.length} items matching “${item.trim()}”` : ""} from{" "}
             {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
             {family.length > 1
-              ? " Each item gets its own opening stock, subtotal and closing stock on hand, with a grand total across all of them at the end."
+              ? " Each item gets its own opening stock, subtotal and closing stock on hand. There is no combined total — pieces of different items don't add up to anything real."
               : picked || family.length
                 ? " The last lines read opening stock, received against issued, then the stock actually on hand today."
                 : " The last line totals received against issued."}

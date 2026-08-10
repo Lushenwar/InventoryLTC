@@ -1,4 +1,4 @@
-# CLAUDE.md — Steward
+# CLAUDE.md — Inventory Date
 
 ## WORKFLOW: BRANCH + PR ONLY
 
@@ -20,22 +20,22 @@ No direct commits to `main`. Every change goes: `git checkout -b <branch>` → c
 ```
 
 Phase: Migration complete
-Status: Steward is live at https://stouffvilleinventory.vercel.app. All 7 PRs merged into main; caught and fixed a real deployment bug along the way (the Vercel project's framework preset was stuck on "Other" from before Next.js existed in this repo, so `next build` never ran and the site 404'd -- fixed by setting the project's framework to "nextjs" via the Vercel API, then redeployed). Verified end-to-end against the live production URL, not just locally: create/receive/edit/delete all round-tripped correctly, search hit real SQL, and the admin passcode gate worked identically to local. Test data cleaned up afterward -- 377 rows.
+Status: Inventory Date is live at https://stouffvilleinventory.vercel.app. All 7 PRs merged into main; caught and fixed a real deployment bug along the way (the Vercel project's framework preset was stuck on "Other" from before Next.js existed in this repo, so `next build` never ran and the site 404'd -- fixed by setting the project's framework to "nextjs" via the Vercel API, then redeployed). Verified end-to-end against the live production URL, not just locally: create/receive/edit/delete all round-tripped correctly, search hit real SQL, and the admin passcode gate worked identically to local. Test data cleaned up afterward -- 377 rows.
 Update this as you finish each step.
 
 ## WHAT THIS FILE IS
 
-This document is the authoritative guide for developing Steward. Every architectural decision, phase boundary, data contract, and engineering constraint defined here is binding. Do not deviate from it without explicit user approval.
+This document is the authoritative guide for developing Inventory Date. Every architectural decision, phase boundary, data contract, and engineering constraint defined here is binding. Do not deviate from it without explicit user approval.
 
 ---
 
 ## PRODUCT DEFINITION
 
-Steward is a shared inventory and expiry-tracking tool for a long-term care facility's floor supply rooms. It replaces a legacy multi-tab Excel workbook that staff maintained by hand. Staff log supplies as deliveries arrive, see what is on hand and where, and get proactive reminders before stock expires. Admins can set or correct expiry dates for items that arrived without one on file.
+Inventory Date is a shared inventory and expiry-tracking tool for a long-term care facility's floor supply rooms. It replaces a legacy multi-tab Excel workbook that staff maintained by hand. Staff log supplies as deliveries arrive, see what is on hand and where, and get proactive reminders before stock expires. Admins can set or correct expiry dates for items that arrived without one on file.
 
-The whole reason this exists is that the old spreadsheet could not tell anyone what was about to expire, and every computer that opened it saw a slightly different copy. Steward fixes both: one source of truth, and a clear expiry lifecycle on every item.
+The whole reason this exists is that the old spreadsheet could not tell anyone what was about to expire, and every computer that opened it saw a slightly different copy. Inventory Date fixes both: one source of truth, and a clear expiry lifecycle on every item.
 
-### What Steward IS:
+### What Inventory Date IS:
 
 * A multi-room inventory of medical and care consumables, each with a location, on-hand count, unit of measure, and catalog code.
 * An expiry lifecycle tracker with a single, unambiguous status per item (expired, expiring, watch, in date, needs date, no expiry).
@@ -43,7 +43,7 @@ The whole reason this exists is that the old spreadsheet could not tell anyone w
 * A reminder engine that rolls up expired, soon-to-expire, and missing-date items into a message dispatched to the responsible staff.
 * The migration target for the legacy spreadsheet: 377 products across 11 storage locations, imported as seed data.
 
-### What Steward IS NOT:
+### What Inventory Date IS NOT:
 
 * Not a clinical system, EMR, or anything that touches resident or patient records. No PHI ever enters this system.
 * Not a procurement or purchasing platform. No purchase orders, no supplier accounts, no vendor integrations in the MVP.
@@ -56,7 +56,7 @@ The whole reason this exists is that the old spreadsheet could not tell anyone w
 2. **Track:** Every item carries an expiry status computed against today's date, so the room's risk is visible at a glance.
 3. **Flag:** Items that are perishable but arrived with no expiry on file are flagged "needs date" for an admin to fill in from the physical label, rather than being silently treated as non-expiring.
 4. **Remind:** A scheduled roll-up surfaces expired, soon-to-expire, and missing-date items and sends them to the responsible staff channel or inbox.
-5. **Act:** Staff pull or replace expired stock and reconcile counts. Steward records the change; it never touches physical or digital stock on its own.
+5. **Act:** Staff pull or replace expired stock and reconcile counts. Inventory Date records the change; it never touches physical or digital stock on its own.
 
 ---
 
@@ -83,7 +83,7 @@ Consumable medical and care supplies held in the facility's floor storage rooms:
 
 ## SYSTEM ARCHITECTURE
 
-Steward keeps the read path, the write path, and the scheduled reminder path clearly separated. Secrets live only on the server. The client never holds the database string or any webhook URL.
+Inventory Date keeps the read path, the write path, and the scheduled reminder path clearly separated. Secrets live only on the server. The client never holds the database string or any webhook URL.
 
 ```
                     ┌─────────────────────────────────────────┐
@@ -222,7 +222,7 @@ Status rules (defined once, in `lib/expiry.ts`):
 ## REPOSITORY STRUCTURE
 
 ```
-steward/
+inventory-date/
 ├── README.md
 ├── CLAUDE.md
 ├── vercel.json                       # Vercel Cron schedule for the expiry sweep
@@ -345,7 +345,7 @@ Live at https://stouffvilleinventory.vercel.app. `README.md` has the day-to-day 
 2. **Last-write-wins on shared state.** Do not store the whole inventory as a single JSON blob (in Vercel Blob or one giant row). Two staff receiving supply at once would clobber each other. Every mutation is an atomic per-row update, for example `stock = stock + :qty`, not a read-modify-write of a big object.
 3. **Dirty expiry data from the legacy sheet.** The source workbook had non-dates sitting in the expiry column: plain counts like `69`, and multi-date strings like `8/31/2026=19, 10/31/2026=15`. Only 17 of 377 items had a usable date. Never trust the raw import. The parser validates date shape and drops junk, and perishable items with no date get flagged, not guessed.
 4. **Timezone and date math.** Store expiry as `DATE`, not a timestamp. Compute "days to expiry" against a fixed facility-local date. If you compare a bare date against a UTC `now()`, items flip a day early or late and the reminders go out on the wrong day.
-5. **No destructive automation.** Steward flags expired stock for a human to pull, and never auto-deletes items or auto-adjusts counts on its own. A reminder tool that quietly changes inventory is worse than no tool. Same spirit as an incident system that never auto-rolls-back production.
+5. **No destructive automation.** Inventory Date flags expired stock for a human to pull, and never auto-deletes items or auto-adjusts counts on its own. A reminder tool that quietly changes inventory is worse than no tool. Same spirit as an incident system that never auto-rolls-back production.
 6. **Secrets stay server-side.** The Neon connection string and the Slack or email webhook URLs live in Vercel env vars and are only touched by route handlers and cron. They must never reach the client bundle. Nothing sensitive in a `NEXT_PUBLIC_` variable.
 7. **No fabricated numbers on the dashboard.** Every count (expiring, expired, needs-date, out-of-stock) is a database query result, never hardcoded or estimated. If a query cannot run, show an error state, not a plausible-looking number.
 8. **Scope creep.** No PHI or resident data, no supplier ordering or PO generation, no barcode hardware in the MVP. The "Other device" tab stays out. When a request pulls toward any of these, stop and confirm before building.

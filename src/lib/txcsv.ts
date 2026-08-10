@@ -112,6 +112,16 @@ function bodyLine(r: TxRow, t: Tally): Cell[] {
 const BLANK5 = ["", "", "", "", ""];
 const EMPTY_ROW: Cell[] = TX_HEADER.map(() => "");
 
+// A range with nothing in it still prints its balance lines, which on their own read like a
+// broken sheet -- "Opening 55 / Totals 0 / On hand 55" looks like data went missing. Say plainly
+// that nothing moved, so the balances read as the answer rather than as a gap.
+const NOTHING_MOVED: Cell[] = [
+  "No transactions in this date range",
+  ...TX_HEADER.slice(1).map(() => "" as Cell),
+];
+const bodyOf = (rows: TxRow[], t: Tally): Cell[][] =>
+  rows.length ? rows.map((r) => bodyLine(r, t)) : [NOTHING_MOVED];
+
 /**
  * Opening stock, the range's movements, then closing stock -- in that reading order.
  *
@@ -153,43 +163,33 @@ const render = (rows: Cell[][]) =>
 /** One item's ledger: transactions, then opening stock, totals and stock on hand. */
 export function txCsv(rows: TxRow[], onHand?: OnHand): string {
   const t = tally();
-  const body = rows.map((r) => bodyLine(r, t));
+  const body = bodyOf(rows, t);
   return render([TX_HEADER, ...body, ...footer(["Opening stock", "Totals", "Stock on hand"], t, onHand)]);
 }
 
 /**
  * Several items in one sheet: a block per item with its own opening stock, subtotal and stock
- * on hand, then a grand total. The per-item balances are the point -- a single blended figure
- * across different products (and different pieces-per-box) would not be any item's real stock.
- * `rows` must arrive grouped by item, which the export query does by ordering on name.
+ * on hand. `rows` must arrive grouped by item, which the export query does by ordering on name.
+ *
+ * There is deliberately **no grand total**. Adding a mask's pieces to a glove's pieces produces a
+ * number that is not a count of anything -- different products, different pack sizes -- and a
+ * labelled "Totals — 4 items" line was still read as a real figure. The per-item blocks are the
+ * whole answer; a sum across them was only ever noise sitting where a total belongs.
  *
  * `onHand` is keyed by product name; items missing from it fall back to the range's net.
  */
 export function txCsvGrouped(rows: TxRow[], onHand?: Map<string, OnHand>): string {
-  const grand = tally();
-  const grandOn = onHand ? { units: 0, pieces: 0 } : undefined;
   const groups = byItem(rows);
   const out: Cell[][] = [TX_HEADER];
 
-  for (const [name, group] of groups) {
+  if (!groups.length) out.push(NOTHING_MOVED);
+
+  groups.forEach(([name, group], i) => {
+    if (i) out.push(EMPTY_ROW); // separator between blocks, never trailing
     const t = tally();
     for (const r of group) out.push(bodyLine(r, t));
-    grand.recd += t.recd;
-    grand.issued += t.issued;
-    grand.piecesRecd += t.piecesRecd;
-    grand.piecesIssued += t.piecesIssued;
-    const on = onHand?.get(name);
-    if (grandOn && on) {
-      grandOn.units += on.units;
-      grandOn.pieces += on.pieces;
-    }
-    out.push(
-      ...footer([`Opening stock — ${name}`, `Subtotal — ${name}`, `Stock on hand — ${name}`], t, on),
-      EMPTY_ROW,
-    );
-  }
+    out.push(...footer([`Opening stock — ${name}`, `Subtotal — ${name}`, `Stock on hand — ${name}`], t, onHand?.get(name)));
+  });
 
-  const n = `${groups.length} item${groups.length === 1 ? "" : "s"}`;
-  out.push(...footer([`Opening stock — ${n}`, `Totals — ${n}`, `Stock on hand — ${n}`], grand, grandOn));
   return render(out);
 }

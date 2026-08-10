@@ -118,9 +118,13 @@ export async function GET(req: NextRequest) {
     ? [...onHand.values()].reduce((a, b) => ({ units: a.units + b.units, pieces: a.pieces + b.pieces }), { units: 0, pieces: 0 })
     : undefined;
 
+  // Name the file after what is actually in it. The old "-item"/"-group" suffix described the
+  // export's internal shape, which meant nothing to whoever opened the download folder later --
+  // "apple-juice" does.
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
   const suffix = [
+    item ? slug(item) || "item" : "all-items",
     kindParam === "receive" ? "received" : kindParam === "pickup" ? "issued" : "",
-    item ? (grouped ? "group" : "item") : "",
   ]
     .filter(Boolean)
     .join("-");
@@ -128,7 +132,7 @@ export async function GET(req: NextRequest) {
   return new NextResponse(grouped ? txCsvGrouped(rows, onHand) : txCsv(rows, onHandTotal), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="steward-transactions${suffix ? `-${suffix}` : ""}_${start}_to_${end}.csv"`,
+      "Content-Disposition": `attachment; filename="inventory-date-${suffix}_${start}_to_${end}.csv"`,
     },
   });
 }
