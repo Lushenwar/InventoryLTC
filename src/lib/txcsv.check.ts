@@ -125,8 +125,9 @@ assert.deepStrictEqual(footer(inWeeks(2026, 26, 26)), { recd: "20000", issued: "
 assert.deepStrictEqual(footer(inWeeks(2026, 22, 22)), { recd: "20000", issued: "20250", onHand: "-250", count: 2 });
 // W18 (Apr 27-May 3): the both-ways day, which must balance to zero.
 assert.deepStrictEqual(footer(inWeeks(2026, 18, 18)), { recd: "10000", issued: "10000", onHand: "0", count: 2 });
-// A quiet week with nothing in it still exports a valid, zeroed sheet.
-assert.deepStrictEqual(footer(inWeeks(2026, 24, 24)), { recd: "0", issued: "0", onHand: "0", count: 0 });
+// A quiet week with nothing in it still exports a valid, zeroed sheet -- with one line saying so
+// rather than an empty body (see the Apple Juice case below).
+assert.deepStrictEqual(footer(inWeeks(2026, 24, 24)), { recd: "0", issued: "0", onHand: "0", count: 1 });
 // A multi-week span (W22-W28) is the sum of its parts.
 assert.deepStrictEqual(footer(inWeeks(2026, 22, 28)), { recd: "40000", issued: "63000", onHand: "-23000", count: 7 });
 // The full span reproduces the sheet's bottom row.
@@ -233,8 +234,8 @@ assert.deepStrictEqual(pickupParts(null), { unit: "", picker: "" });
     glove(LRG150, 150, "2026-07-08", "pickup", -5),
   ]));
 
-  // header + (2 rows + 3 footer + blank) x2 + 3 grand = 16
-  assert.strictEqual(out.length, 16);
+  // header + (2 rows + 3 footer) + blank + (2 rows + 3 footer) = 12. No grand total.
+  assert.strictEqual(out.length, 12);
 
   const at = (label: string) => cols(out.find((l) => l.startsWith(label))!);
   // Both are PPE, so every quantity here is in pieces: 10 boxes of 250 is 2,500 received.
@@ -245,14 +246,13 @@ assert.deepStrictEqual(pickupParts(null), { unit: "", picker: "" });
   assert.strictEqual(at(`Stock on hand — ${LRG150}`)[3], "2250"); // 15 boxes x 150
   assert.strictEqual(at(`Stock on hand — ${LRG150}`).at(-1), "2250");
 
-  // Grand total is the last line, labelled with how many items it spans so nobody reads it
-  // as one product's stock.
-  assert.deepStrictEqual(cols(out.at(-2)!).slice(0, 5), ["Totals — 2 items", "", "", "5500", "1750"]);
-  assert.deepStrictEqual(cols(out.at(-1)!).slice(0, 4), ["Stock on hand — 2 items", "", "", "3750"]);
-  assert.strictEqual(cols(out.at(-1)!).at(-1), "3750"); // 1500 + 2250, not 21 x either pack size
+  // No combined figure anywhere: 2,500 pieces of a 250/box glove plus 3,000 of a 150/box glove
+  // is not a count of anything, and a line labelled "Totals" gets read as one regardless.
+  assert.ok(!out.some((l) => /^(Totals|Opening stock|Stock on hand) — \d+ items?/.test(l)), "no grand total");
+  // The sheet ends on the last item's own closing balance.
+  assert.ok(out.at(-1)!.startsWith(`Stock on hand — ${LRG150}`));
 
-  // With live stock per item, each block closes on its own shelf count and the grand total is
-  // the sum of them -- never a blended net across two different pack sizes.
+  // With live stock per item, each block still closes on its own shelf count.
   const stocked = lines(txCsvGrouped(
     [
       glove(LRG250, 250, "2026-07-06", "receive", 10),
@@ -269,23 +269,38 @@ assert.deepStrictEqual(pickupParts(null), { unit: "", picker: "" });
   assert.strictEqual(st(`Stock on hand — ${LRG250}`)[3], "5000");
   assert.strictEqual(st(`Opening stock — ${LRG150}`)[3], "1500"); // 4500 - 3000 received
   assert.strictEqual(st(`Stock on hand — ${LRG150}`)[3], "4500");
-  assert.strictEqual(cols(stocked.at(-1)!)[3], "9500", "grand total is the sum of the blocks");
 
-  // A blank separator sits between blocks, but never after the grand total.
+  // A blank separator sits between blocks, but never at either end.
   assert.ok(out.some((l) => /^,+$/.test(l)), "blank separator row present");
   assert.ok(!/^,+$/.test(out.at(-1)!), "sheet does not end on a blank row");
 }
 
-// One matching item still balances, and matches the ungrouped ledger's numbers.
+// One matching item balances under its own name, and matches the ungrouped ledger's numbers.
 {
   const only = LEDGER.filter((r) => r.day >= "2026-06-22" && r.day <= "2026-06-28");
   const g = lines(txCsvGrouped(only));
-  assert.deepStrictEqual(cols(g.at(-2)!).slice(0, 5), ["Totals — 1 item", "", "", "20000", "8000"]);
+  assert.deepStrictEqual(cols(g.at(-2)!).slice(0, 5), [`Subtotal — ${ITEM}`, "", "", "20000", "8000"]);
   assert.strictEqual(cols(g.at(-1)!)[3], "12000");
   assert.strictEqual(cols(g.at(-1)!)[3], footer(only).onHand, "grouped and single agree");
 }
 
-// Grand total of the whole legacy ledger is unchanged by grouping it.
+// The whole legacy ledger is one item, so grouping it leaves its subtotal untouched.
 assert.deepStrictEqual(cols(lines(txCsvGrouped(LEDGER)).at(-2)!).slice(3, 5), ["100000", "79500"]);
+
+// --- A range with no movement says so, instead of looking like data went missing. ---
+//
+// Reported against Apple Juice: 55 on hand, nothing received or issued that week. The sheet read
+// "Opening 55 / Totals 0 0 / Stock on hand 55" with an empty body, which looks like the
+// transactions failed to load rather than like a quiet week.
+{
+  const quiet = lines(txCsv([], { units: 55, pieces: 55 }));
+  assert.strictEqual(quiet.length, 5, "header + the note + three balance lines");
+  assert.strictEqual(cols(quiet[1])[0], "No transactions in this date range");
+  assert.strictEqual(cols(quiet.at(-3)!)[3], "55", "opening is still the real shelf count");
+  assert.deepStrictEqual(cols(quiet.at(-2)!).slice(3, 5), ["0", "0"]);
+  assert.strictEqual(cols(quiet.at(-1)!)[3], "55");
+  // Same note on the grouped path, which a family search with no movement lands on.
+  assert.strictEqual(cols(lines(txCsvGrouped([]))[1])[0], "No transactions in this date range");
+}
 
 console.log("ok: transaction export columns, week slices, direction filters, ledger totals, and grouped subtotals");
