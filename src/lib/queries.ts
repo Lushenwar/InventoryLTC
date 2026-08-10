@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db, products } from "./db";
 import type { Counts, Product } from "./types";
+import { searchTerms } from "./search";
 
 export interface Filters {
   q?: string;
@@ -12,6 +13,7 @@ export interface Filters {
 }
 
 const SORTABLE = new Set(["name", "location", "category", "stock", "expiry"]);
+
 
 // Every expiry status is scoped to in-stock rows so the chip filters match the
 // badges: a zero-on-hand item is "Out of stock", never expired/expiring/etc.
@@ -52,9 +54,13 @@ export async function fetchProducts(filters: Filters, today: string): Promise<Pr
   const conditions: SQL[] = [];
   if (filters.loc && filters.loc !== "all") conditions.push(eq(products.location, filters.loc));
   if (filters.cat && filters.cat !== "all") conditions.push(eq(products.category, filters.cat));
-  if (filters.q) {
-    const like = `%${filters.q}%`;
-    conditions.push(or(ilike(products.name, like), ilike(products.code, like))!);
+  // Every word must match somewhere, in any order. A single substring meant "blue gloves" found
+  // nothing at all, because the product is called "Glove Nitrile (blue) Lrg" -- and staff type
+  // what they'd say out loud, not what the catalogue calls it. Location is searched too, so
+  // "gloves 58" narrows to one room.
+  for (const term of searchTerms(filters.q)) {
+    const like = `%${term}%`;
+    conditions.push(or(ilike(products.name, like), ilike(products.code, like), ilike(products.location, like))!);
   }
   const statusCond = statusPredicate(filters.status, today);
   if (statusCond) conditions.push(statusCond);

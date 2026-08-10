@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from "@/lib/expiry";
 import { isoWeekEnd, isoWeekOf, isoWeekStart, weeksInIsoYear } from "@/lib/weeks";
 import { expiryFromMfg, mfgFromExpiry, shelfLifeYears } from "@/lib/shelflife";
-import { packSize, snapQty } from "@/lib/pack";
+import { packSize, receiveBoxes, snapQty } from "@/lib/pack";
 import type { Counts, Product } from "@/lib/types";
 import ReminderPanel from "./ReminderPanel";
 
@@ -34,6 +34,28 @@ type ModalState =
 type CartLine = { id: number; name: string; uom: string; qty: number; max: number; unitsPerBox: number | null };
 
 const ADMIN_SESSION_KEY = "steward_admin_passcode";
+// The cart is the one thing floor staff build up over minutes, and a phone browser will happily
+// evict this tab while they check a message. Survives a reload; cleared once the order is filed.
+const CART_KEY = "inventory_date_pickup_cart";
+
+type Sent = { ok: true; body: any } | { ok: false; error: string };
+
+/**
+ * Every write goes through here. Supply-room wifi drops, and a bare `await fetch` throws on a
+ * dead connection -- which escaped the click handler, left the button stuck on "Recording…"
+ * forever, and told staff nothing. A dropped request is now an ordinary error they can retry.
+ */
+async function send(url: string, init: RequestInit): Promise<Sent> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch {
+    return { ok: false, error: "No connection — nothing was saved. Check wifi and try again." };
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: body.error || `Something went wrong (${res.status}). Nothing was saved.` };
+  return { ok: true, body };
+}
 
 function fmtDate(s: string | null): string {
   if (!s) return "";
@@ -95,6 +117,41 @@ export default function InventoryApp({
   useEffect(() => {
     setAdminPasscodeState(sessionStorage.getItem(ADMIN_SESSION_KEY));
   }, []);
+
+  // Restore an unfinished order. Every line is re-read against live stock rather than trusted
+  // from storage -- the saved copy could be hours old, and someone else may have taken the box
+  // or the product may be gone. Lines that no longer hold up are dropped, not silently clamped
+  // to something the shelf can't cover.
+  const cartLoaded = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CART_KEY) ?? "[]") as CartLine[];
+      const live = new Map(allProducts.map((p) => [p.id, p]));
+      const restored = saved.flatMap((l): CartLine[] => {
+        const p = live.get(l.id);
+        if (!p || p.stock <= 0) return [];
+        return [{ id: p.id, name: p.name, uom: p.uom, unitsPerBox: p.unitsPerBox, max: p.stock, qty: Math.min(l.qty, p.stock) }];
+      });
+      if (restored.length) {
+        setCart(restored);
+        setPickupMode(true); // put them back where they left off, dock and all
+        if (restored.length < saved.length) showToast("Some items were removed — stock changed while you were away.");
+      }
+    } catch {
+      // A corrupt or unreadable cart is not worth blocking the app over.
+    }
+    cartLoaded.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!cartLoaded.current) return; // don't blank the saved cart before it has been read
+    try {
+      localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    } catch {
+      // Private mode / full storage: the cart still works for this session.
+    }
+  }, [cart]);
 
   function setAdminPasscode(code: string | null) {
     setAdminPasscodeState(code);
@@ -168,17 +225,15 @@ export default function InventoryApp({
     router.refresh();
   }
 
+  const jsonPost = (body: unknown) => ({
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body),
+  });
+
   async function submitCreate(payload: Record<string, unknown>) {
-    const res = await fetch("/api/products", {
-      method: "POST",
-      headers: adminHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not add product");
-      return;
-    }
+    const r = await send("/api/products", jsonPost(payload));
+    if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast(`Added "${payload.name}"`);
@@ -186,85 +241,66 @@ export default function InventoryApp({
 
   // Loops the single-line /api/receive per cart line so all the lot logic lives in one place.
   // Not one transaction, but receiving is additive (no negative-stock risk), so applied lines stand.
+  // Stops at the first failure: carrying on would pile more half-applied lines onto a delivery
+  // that already needs checking, and the toast names how many did land.
   async function submitReceiveMany(lines: { id: number; qty: number; expiry: string | null }[]) {
-    const oks: boolean[] = [];
+    let done = 0;
     for (const l of lines) {
-      const res = await fetch("/api/receive", {
-        method: "POST",
-        headers: adminHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(l),
-      });
-      oks.push(res.ok);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        showToast(body.error || "Could not receive one line");
+      const r = await send("/api/receive", jsonPost(l));
+      if (!r.ok) {
+        showToast(done ? `${r.error} ${done} of ${lines.length} line(s) were saved.` : r.error);
+        break;
       }
+      done++;
     }
     setModal({ type: "closed" });
     await refreshAfterMutation();
-    const done = oks.filter(Boolean).length;
-    if (oks.every(Boolean) && done) showToast(`Received ${done} line(s)`);
+    if (done === lines.length) showToast(`Received ${done} line(s)`);
   }
 
   async function submitRemove(payload: { id: number; qty: number; reason: string }) {
-    const res = await fetch("/api/remove", {
-      method: "POST",
-      headers: adminHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not remove stock");
-      return;
-    }
+    const r = await send("/api/remove", jsonPost(payload));
+    if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast(`Removed ${payload.qty} unit(s)`);
   }
 
   // Returns true on success so the cart dock knows to reset its own busy/unit/picker state.
+  // The cart is only emptied once the server has confirmed the order -- a failed send leaves it
+  // exactly as it was so they can retry without rebuilding it.
   async function submitPickup(unit: string, picker: string): Promise<boolean> {
-    const res = await fetch("/api/haa-pickup", {
+    const r = await send("/api/haa-pickup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items: cart.map((l) => ({ id: l.id, qty: l.qty })), unit, picker }),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not record pickup");
+    if (!r.ok) {
+      showToast(r.error);
       return false;
     }
-    const body = await res.json();
     setCart([]);
     setPickupMode(false);
     await refreshAfterMutation();
-    showToast(`Recorded HAA pickup · ${body.count} item(s)`);
+    showToast(`Recorded HAA pickup · ${r.body.count} item(s)`);
     return true;
   }
 
   async function submitEdit(id: number, payload: Record<string, unknown>) {
-    const res = await fetch(`/api/products/${id}`, {
+    const r = await send(`/api/products/${id}`, {
       method: "PATCH",
       headers: adminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not save changes");
-      return;
-    }
+    if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast("Saved changes");
   }
 
   async function submitDelete(id: number, name: string) {
-    const res = await fetch(`/api/products/${id}`, { method: "DELETE", headers: adminHeaders() });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not delete product");
-      return;
-    }
+    const r = await send(`/api/products/${id}`, { method: "DELETE", headers: adminHeaders() });
+    if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast(`Deleted "${name}"`);
@@ -418,6 +454,9 @@ export default function InventoryApp({
                       <button className="pnamebtn" title="View history" onClick={() => setModal({ type: "history", product: it })}>
                         <span className="pname">{it.name || <span style={{ color: "var(--faint)" }}>Unnamed</span>}</span>
                         <span className="pcode">{it.code || "—"}</span>
+                        {/* The Location column is hidden on phones, and "which room" is the second
+                            thing anyone needs. Repeat it here so it survives the narrow layout. */}
+                        <span className="ploc">{it.location || "—"}</span>
                       </button>
                     </td>
                     <td className="hide-md">
@@ -1326,14 +1365,11 @@ function ReceiveModal({
   // PPE items (unitsPerBox set) are received as total pieces; stock is in boxes, so convert.
   const upb = selected?.unitsPerBox ?? null;
   const qtyEntered = parseInt(qty) || 0;
-  // Stock is whole boxes, so a piece count that isn't a multiple of the box has to snap.
-  // Snapping is always shown in the preview below -- rounding silently would invent or
-  // destroy stock (400 pcs of a 250/box glove is 500 stored, 1 pc is nothing).
-  // Floor at one box for any non-zero entry: rounding under half a box down to 0 left
-  // Receive greyed out with nothing on screen explaining why.
-  const qtyBoxes = upb
-    ? qtyEntered > 0 ? Math.max(1, Math.round(qtyEntered / upb)) : 0
-    : Math.max(1, qtyEntered);
+  // Stock is whole boxes, so a piece count that isn't a multiple of the box has to snap -- always
+  // downwards (see receiveBoxes). Anything the entry loses is shown in the preview below, and an
+  // entry under one full box books nothing and says why, rather than quietly inventing a box.
+  const qtyBoxes = receiveBoxes(qtyEntered, upb);
+  const underOneBox = upb != null && qtyEntered > 0 && qtyBoxes === 0;
   // Boxed PPE cartons always carry one of the two dates, and an undated lot can't be tracked or
   // alerted on, so require it rather than letting a dateless row through. Keyed on unitsPerBox
   // rather than the category, so re-filing a non-expiring item (an apron) as PPE doesn't start
@@ -1428,9 +1464,11 @@ function ReceiveModal({
                 <label>{upb ? "Total quantity received (pieces)" : "Quantity received"}</label>
                 <input type="number" min={upb ?? 1} step={upb ?? 1} value={qty} onChange={(e) => setQty(e.target.value)} />
                 {upb && selected && (
-                  <span className="combo-sel">
-                    = {qtyBoxes} {selected.uom} ({(qtyBoxes * upb).toLocaleString()} pcs, {upb}/box)
-                    {qtyBoxes * upb !== qtyEntered && ` — snapped from ${qtyEntered.toLocaleString()}`}
+                  <span className="combo-sel" style={underOneBox ? { color: "var(--flag)" } : undefined}>
+                    {underOneBox
+                      ? `${qtyEntered.toLocaleString()} pcs is less than one box of ${upb} — enter at least ${upb}.`
+                      : <>= {qtyBoxes} {selected.uom} ({(qtyBoxes * upb).toLocaleString()} pcs, {upb}/box)
+                          {qtyBoxes * upb !== qtyEntered && ` — ${(qtyEntered - qtyBoxes * upb).toLocaleString()} pcs short of the next full box, so ${(qtyBoxes * upb).toLocaleString()} is booked in`}</>}
                   </span>
                 )}
               </div>

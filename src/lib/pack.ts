@@ -16,6 +16,21 @@ export function packSize(name: string): number {
   return n > 0 ? n : 1;
 }
 
+/**
+ * A received piece count -> whole boxes to add to stock.
+ *
+ * Floors, like `snapQty` below. Receiving 400 pieces of a 250/box item is ONE box, never two:
+ * rounding to nearest booked 500 pieces onto the shelf when 400 arrived, and an inventory that
+ * over-reports is worse than one that under-reports -- it hides a shortage instead of showing it.
+ *
+ * Returns 0 when the entry is under a whole box, so the caller can say so out loud rather than
+ * silently booking in a box that was never delivered.
+ */
+export function receiveBoxes(entered: number, unitsPerBox: number | null): number {
+  if (!(entered > 0)) return 0;
+  return unitsPerBox ? Math.floor(entered / unitsPerBox) : Math.floor(entered);
+}
+
 export type Snap = { boxes: number; warn: string | null };
 
 /**
