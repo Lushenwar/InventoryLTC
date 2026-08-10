@@ -170,6 +170,13 @@
   .combo-empty{padding:11px;color:var(--muted);font-size:13px}
   .combo-sel{margin-top:6px;font-size:12px;color:var(--muted)}
   .expsub{font-size:11px;color:var(--faint);margin-top:2px;font-variant-numeric:tabular-nums}
+  /* Two lots of the same product are identical apart from this date, so it is the largest thing
+     in the row's status cell -- readable at arm's length on a shelf, not squinted at. Tabular
+     figures so dates a day apart line up digit-for-digit and the difference is obvious. */
+  .expdate{font-size:16px;font-weight:680;letter-spacing:-.01em;color:var(--ink);
+    font-variant-numeric:tabular-nums;white-space:nowrap;margin-bottom:5px}
+  .expdate.gone{color:var(--expired)}
+  @media(max-width:620px){.expdate{font-size:15px}}
   .rowbtns{display:flex;gap:4px;justify-content:flex-end}
   .iconbtn{border:1px solid transparent;background:transparent;color:var(--muted);
     width:30px;height:30px;border-radius:7px;display:grid;place-items:center}

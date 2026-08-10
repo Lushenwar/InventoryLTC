@@ -21,9 +21,7 @@ function shiftYears(date: string, years: number): string {
   return `${y + years}-${String(m).padStart(2, "0")}-${day}`;
 }
 
+// Staff read the manufacture date off the carton and we derive the expiry from it. The inverse
+// (deriving a manufacture date from an expiry, to show in the table) was removed: it put a second
+// date next to the real one and staff had to work out which was which.
 export const expiryFromMfg = (mfg: string, name: string) => shiftYears(mfg, shelfLifeYears(name));
-
-// Inverse, for display. Only meaningful when it lands in the past -- an expiry
-// that outruns the shelf life implies a manufacture date that hasn't happened
-// yet, which is nonsense, not information. Callers drop it (see MfgLine).
-export const mfgFromExpiry = (expiry: string, name: string) => shiftYears(expiry, -shelfLifeYears(name));

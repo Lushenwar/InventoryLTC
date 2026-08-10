@@ -1,6 +1,6 @@
 // Run: npx tsx src/lib/shelflife.check.ts
 import assert from "node:assert";
-import { expiryFromMfg, mfgFromExpiry, shelfLifeYears } from "./shelflife";
+import { expiryFromMfg, shelfLifeYears } from "./shelflife";
 
 // Every distinct PPE product name in the database, with the years it must map to.
 const cases: [string, number][] = [
@@ -29,11 +29,9 @@ for (const [name, want] of cases) {
 
 const glove = "Glove Nitrile (blue) Lrg 250/box";
 assert.strictEqual(expiryFromMfg("2026-03-14", glove), "2031-03-14");
-assert.strictEqual(mfgFromExpiry("2031-03-14", glove), "2026-03-14");
 assert.strictEqual(expiryFromMfg("2026-01-05", "Viva L2 Mask 50/box"), "2029-01-05");
 assert.strictEqual(expiryFromMfg("2026-01-05", "health  sanitizer"), "2028-01-05");
 // Leap day clamps back, never forward past the real shelf life.
 assert.strictEqual(expiryFromMfg("2024-02-29", glove), "2029-02-28");
-assert.strictEqual(mfgFromExpiry("2028-02-29", glove), "2023-02-28");
 
-console.log(`ok: ${cases.length + 6} cases pass`);
+console.log(`ok: ${cases.length + 4} cases pass`);

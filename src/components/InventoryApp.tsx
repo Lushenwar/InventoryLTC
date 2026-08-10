@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from "@/lib/expiry";
 import { isoWeekEnd, isoWeekOf, isoWeekStart, weeksInIsoYear } from "@/lib/weeks";
-import { expiryFromMfg, mfgFromExpiry, shelfLifeYears } from "@/lib/shelflife";
+import { expiryFromMfg, shelfLifeYears } from "@/lib/shelflife";
 import { packSize, receiveBoxes, snapQty } from "@/lib/pack";
 import type { Counts, Product } from "@/lib/types";
 import ReminderPanel from "./ReminderPanel";
@@ -480,7 +480,6 @@ export default function InventoryApp({
                     </td>
                     <td>
                       <StatusCell status={s.key} days={s.days} expiry={it.expiry} />
-                      <MfgLine it={it} today={today} />
                       {it.note && (
                         <div className="expsub" title={it.note}>
                           ⚑ {it.note.replace(/\n/g, " · ")}
@@ -670,30 +669,32 @@ function statusEdge(key: StatusKey): string {
   return edges[key];
 }
 
+/**
+ * The date leads; the badge explains it.
+ *
+ * It used to be the other way round -- an 11px grey date under a bold "In date" badge. Two lots of
+ * the same glove differ ONLY by their date, so the one fact that tells them apart was the faintest
+ * thing in the row, while the word that was identical on both was the loudest. Anyone picking the
+ * wrong lot was being set up by the layout.
+ */
 function StatusCell({ status, days, expiry }: { status: StatusKey; days: number | null; expiry: string | null }) {
   const cls = `badge ${STATUS_META[status].cls}`;
-  if (status === "oos") return <span className={cls}><span className="d" />Out of stock</span>;
-  if (status === "expired") return (<><span className={cls}><span className="d" />Expired</span><div className="expsub">{fmtDate(expiry)} · {Math.abs(days ?? 0)}d ago</div></>);
-  if (status === "soon") return (<><span className={cls}><span className="d" />{days}d left</span><div className="expsub">{fmtDate(expiry)}</div></>);
-  if (status === "watch") return (<><span className={cls}><span className="d" />{days}d left</span><div className="expsub">{fmtDate(expiry)}</div></>);
-  if (status === "ok") return (<><span className={cls}><span className="d" />In date</span><div className="expsub">{fmtDate(expiry)}</div></>);
-  if (status === "flag") return <span className={cls}><span className="d" />Needs date</span>;
-  return <span className={cls}><span className="d" />No expiry</span>;
+  // Out of stock, needs-a-date and no-expiry have no date to lead with, so the badge is the answer.
+  if (!expiry || status === "oos") return <span className={cls}><span className="d" />{STATUS_META[status].label}</span>;
+
+  const d = Math.abs(days ?? 0);
+  const plural = (n: number) => (n === 1 ? "day" : "days");
+  return (
+    <>
+      <div className={`expdate ${status === "expired" ? "gone" : ""}`}>{fmtDate(expiry)}</div>
+      <span className={cls}>
+        <span className="d" />
+        {status === "expired" ? `Expired ${d} ${plural(d)} ago` : status === "ok" ? "In date" : `${d} ${plural(d)} left`}
+      </span>
+    </>
+  );
 }
 
-// Boxed PPE only: boxes are stamped with a manufacture date, so show the one the
-// expiry implies. Dropped when it lands in the future -- that means the entered
-// expiry outruns the shelf life, so the derived date would be nonsense.
-//
-// Keyed on unitsPerBox, not on category === "PPE". The category is a filing label anyone can
-// re-file (disposable aprons are PPE and don't expire); unitsPerBox is the actual marker of
-// "counted in boxes, carries a shelf life". Every PPE row that had this behaviour still has it.
-function MfgLine({ it, today }: { it: Product; today: string }) {
-  if (it.unitsPerBox == null || !it.expiry) return null;
-  const mfg = mfgFromExpiry(it.expiry, it.name);
-  if (mfg > today) return null;
-  return <div className="expsub">Mfg ~{fmtDate(mfg)} · {shelfLifeYears(it.name)}y shelf life</div>;
-}
 
 // Only reachable with admin unlocked -- InventoryApp's `guard` asks for the passcode before
 // the form opens, so there is no per-field passcode prompt in here any more.
