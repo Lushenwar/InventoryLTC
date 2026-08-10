@@ -308,7 +308,7 @@ export default function InventoryApp({
 
   const statCards = [
     { lab: "Products tracked", val: counts.all, sub: `${counts.onhand.toLocaleString()} units on hand`, edge: "var(--primary)", status: "all" },
-    { lab: "Expiring ≤90 days", val: counts.soon + counts.watch, sub: "within the next 3 months", edge: "var(--soon)", status: "soon90" },
+    { lab: "Expiring soon", val: counts.soon + counts.watch, sub: "within the next 3 months", edge: "var(--soon)", status: "soon90" },
     { lab: "Expired", val: counts.expired, sub: "remove or verify", edge: "var(--expired)", status: "expired" },
     { lab: "Needs expiry date", val: counts.flag, sub: "flagged for review", edge: "var(--flag)", status: "flag" },
     { lab: "Out of stock", val: counts.oos, sub: "reorder check", edge: "var(--muted)", status: "oos" },
@@ -317,8 +317,8 @@ export default function InventoryApp({
   const chips = [
     { k: "all", label: "All", n: counts.all },
     { k: "expired", label: "Expired", n: counts.expired },
-    { k: "soon", label: "≤30 days", n: counts.soon },
-    { k: "watch", label: "31–90 days", n: counts.watch },
+    { k: "soon", label: "Under 30 days", n: counts.soon },
+    { k: "watch", label: "1 to 3 months", n: counts.watch },
     { k: "flag", label: "Needs date", n: counts.flag },
     { k: "none", label: "No expiry", n: counts.none },
     { k: "ok", label: "In date", n: counts.ok },
@@ -416,6 +416,21 @@ export default function InventoryApp({
               </option>
             ))}
           </select>
+          {/* Exports exactly what the filters above are showing, so a manager can narrow to a room
+              or to "expiring soon" and hand that list to whoever is counting. */}
+          <a
+            className="btn"
+            href={`/api/inventory/export?${new URLSearchParams(
+              Object.entries(filters).filter(([, v]) => v && v !== "all") as [string, string][],
+            )}`}
+            download
+            title="Download this list as a spreadsheet"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
+            </svg>
+            Export list
+          </a>
           <div className="chips">
             {chips.map((c) => (
               <button
@@ -437,8 +452,8 @@ export default function InventoryApp({
                 <th onClick={() => toggleSort("name")}>Product <span className="arr">{sortArrow("name")}</span></th>
                 <th className="hide-md" onClick={() => toggleSort("location")}>Location <span className="arr">{sortArrow("location")}</span></th>
                 <th className="hide-md" onClick={() => toggleSort("category")}>Category <span className="arr">{sortArrow("category")}</span></th>
-                <th onClick={() => toggleSort("stock")}>On hand <span className="arr">{sortArrow("stock")}</span></th>
-                <th className="no-sort">Quantity</th>
+                <th onClick={() => toggleSort("stock")}>Boxes on shelf <span className="arr">{sortArrow("stock")}</span></th>
+                <th className="no-sort">Total pieces</th>
                 <th onClick={() => toggleSort("expiry")}>Expiry status <span className="arr">{sortArrow("expiry")}</span></th>
                 <th className="no-sort" style={{ textAlign: "right" }}>Actions</th>
               </tr>
@@ -892,11 +907,13 @@ type EventRow = { id: number; kind: string; qtyDelta: number | null; expirySet: 
 
 function describeEvent(e: EventRow, uom: string): string {
   switch (e.kind) {
-    case "create": return `Created${e.qtyDelta ? ` · ${e.qtyDelta} ${uom}` : ""}`;
-    case "receive": return `Received +${e.qtyDelta ?? 0}${e.expirySet ? ` · exp ${e.expirySet}` : ""}`;
-    case "adjust": return (e.qtyDelta ?? 0) < 0 ? `Removed ${e.qtyDelta}` : `Adjusted +${e.qtyDelta ?? 0}`;
-    case "pickup": return `HAA pickup ${e.qtyDelta ?? 0} ${uom}`;
-    case "set_expiry": return `Expiry set to ${e.expirySet ?? "—"}`;
+    // Quantities are stored signed, but "Removed -3" reads as removing minus three. The word
+    // already says the direction, so the number is always shown as a plain count.
+    case "create": return `Added to the list${e.qtyDelta ? ` · ${e.qtyDelta} ${uom}` : ""}`;
+    case "receive": return `Received ${e.qtyDelta ?? 0} ${uom}${e.expirySet ? ` · expires ${fmtDate(e.expirySet)}` : ""}`;
+    case "adjust": return (e.qtyDelta ?? 0) < 0 ? `Removed ${Math.abs(e.qtyDelta ?? 0)} ${uom}` : `Added back ${e.qtyDelta ?? 0} ${uom}`;
+    case "pickup": return `Picked up ${Math.abs(e.qtyDelta ?? 0)} ${uom}`;
+    case "set_expiry": return `Expiry date set to ${e.expirySet ? fmtDate(e.expirySet) : "—"}`;
     case "delete": return "Deleted";
     default: return e.kind;
   }
