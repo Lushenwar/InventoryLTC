@@ -49,7 +49,7 @@ const LEDGER: TxRow[] = [
   issue("2026-05-25", FS, 20_250, "HAA", ""),
   receive("2026-05-21", FS, 20_000, null, "Received by Wing"),
   receive("2026-05-13", "", 10_000, null, "Return from Emergency stock on 13 May"),
-  // The one legacy day with movement both ways -- in Steward that is two events, not one row.
+  // The one legacy day with movement both ways -- in Inventory Date that is two events, not one row.
   receive("2026-04-27", "Others", 10_000, "2030-02-28", "Return to inventory 13 May"),
   issue("2026-04-27", "Others", 10_000, "Raymond", "Stock"),
   issue("2026-04-20", FS, 3_250, "HAAs", "All units"),

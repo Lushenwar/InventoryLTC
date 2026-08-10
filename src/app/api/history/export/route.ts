@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
   return new NextResponse(grouped ? txCsvGrouped(rows, onHand) : txCsv(rows, onHandTotal), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="steward-${suffix}_${start}_to_${end}.csv"`,
+      "Content-Disposition": `attachment; filename="inventory-date-${suffix}_${start}_to_${end}.csv"`,
     },
   });
 }
