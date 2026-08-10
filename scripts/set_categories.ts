@@ -6,8 +6,11 @@
  *    (matched by code, then by name); anything not in that list is inferred from
  *    keywords (INFER_RULES) into one of the CSV's own categories.
  *
- * Run:  npx tsx scripts/set_categories.ts --dry     # print plan, write nothing
- *       npx tsx scripts/set_categories.ts           # update prod DB + seed.json
+ * Run:  npx tsx scripts/set_categories.ts --dry         # print the plan, write nothing
+ *       npx tsx scripts/set_categories.ts --seed-only   # rewrite seed.json only, leave the DB
+ *       npx tsx scripts/set_categories.ts               # update prod DB + seed.json
+ *
+ * Idempotent: re-running produces the same categories, so a second run reports 0 changes.
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
@@ -16,19 +19,51 @@ import { neon } from "@neondatabase/serverless";
 
 const STORE_38 = "38 Facility Storage";
 
-// Location -> single category (everything except 38 Facility Storage).
+// Location -> the category for anything in that room a ROOM_RULES entry doesn't claim.
+// A room is only a safe default where the room really is single-purpose (the drug room, the
+// glove room). Where it isn't, ROOM_RULES below does the real work.
 const LOCATION_CATEGORY: Record<string, string> = {
-  "32 Facility Storage": "Lab",
-  "52 Equipment Storage": "Personal",
-  "52 Facility Storage": "Fall",
+  "32 Facility Storage": "Waste",          // Stericycle sharps/waste bins -- was "Lab", which they are not
+  "52 Equipment Storage": "Personal care",
+  "52 Facility Storage": "Fall prevention",
   "58 Facility Storage": "PPE",
   "62 Facility Storage": "PPE",
   "68 Facility Storage": "Brief",
   "72 Equipment Storage": "Brief",
   "78 Facility Storage": "Brief",
   "7W Record Room": "Medicine",
-  "Receiving Outdoor Pod": "Medicine",
+  "Receiving Outdoor Pod": "Brief",        // two brief lines -- was "Medicine", plainly wrong
 };
+
+// Per-item rules for the rooms that hold more than one kind of thing. Stamping a whole room
+// with one category made "category" a second, worse copy of "location" -- which is how a dry
+// wipe ended up filed as a brief. First match wins, so order matters within a room.
+const ROOM_RULES: Record<string, [RegExp, string][]> = {
+  // The catch-all room: food, protective wear, toiletries and plastic containers all together.
+  "52 Equipment Storage": [
+    [/apron|shoe cover|shower cap/i, "PPE"],
+    [/apple|honey|thickner|thickener|juice|sauce/i, "Nutrition"],
+    [/urine specimen/i, "Lab"],
+    // Body/toileting care. Ahead of the container rule so "DENTURE CUP" reads as denture care,
+    // not as a cup.
+    [/bedpan|urinal|commode|emesis|wash basin|denture|tooth|comb|razor|shav|shampoo|bodywash|lotion|skin cream|perineal|mouth rinse|nail clipper|glycerin swab|readybath/i, "Personal care"],
+    [/cup|fork|spoon|straw|tumbler|basket|caddy|dispenser|bracket|spray bottle|jug|tray|tub scrub|cylinder|shoe box|box holder|tissue|distilled water/i, "General Supplies"],
+  ],
+  // Fall equipment, lift equipment and pressure-relief padding share a room but not a purpose.
+  "52 Facility Storage": [
+    [/hoyer|sling|transport chair/i, "Mobility & Transfer"],
+    [/heel|foot pillow|wedge|cushion|equagel|silicore/i, "Pressure care"],
+  ],
+  // The brief rooms also stock peri-care wipes and washcloths -- Patrick's actual finding.
+  "68 Facility Storage": [[/wipe|washcloth/i, "Personal care"]],
+  "72 Equipment Storage": [[/wipe|washcloth/i, "Personal care"]],
+  "78 Facility Storage": [[/wipe|washcloth/i, "Personal care"]],
+};
+
+// "Medication" (3 topical antiseptics) sat next to "Medicine" (61 actual drugs) and nobody could
+// tell which was which from the filter dropdown. Betadine, peroxide and a barrier ointment are
+// skin/wound products, so they join the category that already covers those.
+const MERGE: Record<string, string> = { Medication: "Wound care" };
 
 // Keyword rules for 38-storage items not present in the CSV. First match wins,
 // so order matters (catheter before generic bandage/tray, etc.).
@@ -86,45 +121,64 @@ function infer(name: string): string {
   return "General Supplies";
 }
 
-type Src = "location" | "csv" | "infer";
+type Src = "location" | "room-rule" | "csv" | "infer";
 export function makeCategorizer() {
   const { byCode, byName } = loadCsv();
+  const merge = (c: string) => MERGE[c] ?? c;
   return (loc: string, code: string | null, name: string): { category: string; source: Src } => {
-    if (loc !== STORE_38) return { category: LOCATION_CATEGORY[loc] ?? "Uncategorized", source: "location" };
+    if (loc !== STORE_38) {
+      for (const [re, cat] of ROOM_RULES[loc] ?? []) if (re.test(name)) return { category: merge(cat), source: "room-rule" };
+      return { category: merge(LOCATION_CATEGORY[loc] ?? "Uncategorized"), source: "location" };
+    }
     const hit = byCode.get(norm(code)) || byName.get(norm(name));
-    if (hit) return { category: hit, source: "csv" };
-    return { category: infer(name), source: "infer" };
+    if (hit) return { category: merge(hit), source: "csv" };
+    return { category: merge(infer(name)), source: "infer" };
   };
 }
 
 async function main() {
   const dry = process.argv.includes("--dry");
+  const seedOnly = process.argv.includes("--seed-only");
   const categorize = makeCategorizer();
   const sql = neon(process.env.DATABASE_URL!);
-  const rows = await sql`select id, code, name, location from products order by location, name` as any[];
+  const rows = await sql`select id, code, name, location, category from products order by location, name` as any[];
 
   const counts: Record<string, number> = {};
   const inferred: { name: string; category: string }[] = [];
+  const changed: { loc: string; name: string; from: string; to: string }[] = [];
   for (const p of rows) {
     const { category, source } = categorize(p.location, p.code, p.name);
     counts[category] = (counts[category] || 0) + 1;
     if (source === "infer") inferred.push({ name: p.name, category });
+    if ((p.category ?? "") !== category) changed.push({ loc: p.location, name: p.name, from: p.category ?? "(none)", to: category });
   }
 
   console.log("=== category totals ===");
   for (const [c, n] of Object.entries(counts).sort()) console.log(n.toString().padStart(4), c);
+
+  // The whole point of the dry run: every row whose category this pass would move, so the
+  // reclassification is reviewed as a list of decisions rather than trusted as a rule set.
+  console.log(`\n=== would change (${changed.length}) ===`);
+  for (const c of changed.sort((a, b) => a.loc.localeCompare(b.loc) || a.from.localeCompare(b.from) || a.name.localeCompare(b.name)))
+    console.log(`  ${c.loc.slice(0, 21).padEnd(22)} ${c.from.padEnd(16)} -> ${c.to.padEnd(20)} ${c.name.slice(0, 46)}`);
+
   console.log(`\n=== 38-storage inferred (${inferred.length}) — review these ===`);
   for (const i of inferred.sort((a, b) => a.category.localeCompare(b.category)))
     console.log(`  ${i.category.padEnd(18)} ${i.name}`);
 
   if (dry) { console.log("\n(dry run — nothing written)"); return; }
 
-  // update DB
-  for (const p of rows) {
-    const { category } = categorize(p.location, p.code, p.name);
-    await sql`update products set category=${category} where id=${p.id}`;
+  // update DB -- skipped by --seed-only, so the reclassification can land in a PR as a seed.json
+  // diff and only touch the live inventory when that PR is deployed.
+  if (seedOnly) {
+    console.log("\n(--seed-only — DB left alone)");
+  } else {
+    for (const p of rows) {
+      const { category } = categorize(p.location, p.code, p.name);
+      await sql`update products set category=${category} where id=${p.id}`;
+    }
+    console.log(`\nUpdated ${rows.length} DB rows.`);
   }
-  console.log(`\nUpdated ${rows.length} DB rows.`);
 
   // update seed.json (the spreadsheet of record)
   const seed = JSON.parse(readFileSync("data/seed.json", "utf8"));

@@ -9,7 +9,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Lab"
+    "category": "Waste"
   },
   {
     "id": 2,
@@ -21,7 +21,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Lab"
+    "category": "Waste"
   },
   {
     "id": 3,
@@ -33,7 +33,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Lab"
+    "category": "Waste"
   },
   {
     "id": 4,
@@ -45,7 +45,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Lab"
+    "category": "Waste"
   },
   {
     "id": 5,
@@ -225,7 +225,7 @@
     "expiry": null,
     "needsExpiry": true,
     "note": "",
-    "category": "Medication"
+    "category": "Wound care"
   },
   {
     "id": 20,
@@ -297,7 +297,7 @@
     "expiry": null,
     "needsExpiry": true,
     "note": "",
-    "category": "Medication"
+    "category": "Wound care"
   },
   {
     "id": 26,
@@ -837,7 +837,7 @@
     "expiry": null,
     "needsExpiry": true,
     "note": "",
-    "category": "Medication"
+    "category": "Wound care"
   },
   {
     "id": 71,
@@ -2071,7 +2071,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Nutrition"
   },
   {
     "id": 172,
@@ -2083,7 +2083,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Nutrition"
   },
   {
     "id": 173,
@@ -2095,7 +2095,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "PPE"
   },
   {
     "id": 174,
@@ -2107,7 +2107,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "PPE"
   },
   {
     "id": 175,
@@ -2119,7 +2119,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 176,
@@ -2131,7 +2131,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 177,
@@ -2143,7 +2143,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 178,
@@ -2155,7 +2155,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 179,
@@ -2167,7 +2167,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 180,
@@ -2179,7 +2179,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 181,
@@ -2191,7 +2191,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 182,
@@ -2203,7 +2203,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 183,
@@ -2215,7 +2215,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 184,
@@ -2227,7 +2227,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 185,
@@ -2239,7 +2239,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 186,
@@ -2251,7 +2251,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 187,
@@ -2263,7 +2263,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 188,
@@ -2275,7 +2275,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Nutrition"
   },
   {
     "id": 189,
@@ -2287,7 +2287,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 190,
@@ -2299,7 +2299,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "legacy sheet had stock -101; verify actual count",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 191,
@@ -2311,7 +2311,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 192,
@@ -2323,7 +2323,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 193,
@@ -2335,7 +2335,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 194,
@@ -2347,7 +2347,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 195,
@@ -2359,7 +2359,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 196,
@@ -2371,7 +2371,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 197,
@@ -2383,7 +2383,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 198,
@@ -2395,7 +2395,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 199,
@@ -2407,7 +2407,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 200,
@@ -2419,7 +2419,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 201,
@@ -2431,7 +2431,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "PPE"
   },
   {
     "id": 202,
@@ -2443,7 +2443,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "PPE"
   },
   {
     "id": 203,
@@ -2455,7 +2455,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Nutrition"
   },
   {
     "id": 204,
@@ -2467,7 +2467,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 205,
@@ -2479,7 +2479,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 206,
@@ -2491,7 +2491,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 207,
@@ -2503,7 +2503,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 208,
@@ -2515,7 +2515,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 209,
@@ -2527,7 +2527,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 210,
@@ -2539,7 +2539,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Lab"
   },
   {
     "id": 211,
@@ -2551,7 +2551,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "Personal care"
   },
   {
     "id": 212,
@@ -2563,7 +2563,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 213,
@@ -2575,7 +2575,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 214,
@@ -2587,7 +2587,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 215,
@@ -2599,7 +2599,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 216,
@@ -2611,7 +2611,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 217,
@@ -2623,7 +2623,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 218,
@@ -2635,7 +2635,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 219,
@@ -2647,7 +2647,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 220,
@@ -2659,7 +2659,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 221,
@@ -2671,7 +2671,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 222,
@@ -2683,7 +2683,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 223,
@@ -2695,7 +2695,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 224,
@@ -2707,7 +2707,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 225,
@@ -2719,7 +2719,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Personal"
+    "category": "General Supplies"
   },
   {
     "id": 226,
@@ -2731,7 +2731,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 227,
@@ -2743,7 +2743,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 228,
@@ -2755,7 +2755,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 229,
@@ -2767,7 +2767,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 230,
@@ -2779,7 +2779,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 231,
@@ -2791,7 +2791,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 232,
@@ -2803,7 +2803,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 233,
@@ -2815,7 +2815,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 234,
@@ -2827,7 +2827,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 235,
@@ -2839,7 +2839,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 236,
@@ -2851,7 +2851,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 237,
@@ -2863,7 +2863,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 238,
@@ -2875,7 +2875,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 239,
@@ -2887,7 +2887,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 240,
@@ -2899,7 +2899,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 241,
@@ -2911,7 +2911,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 242,
@@ -2923,7 +2923,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 243,
@@ -2935,7 +2935,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 244,
@@ -2947,7 +2947,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 245,
@@ -2959,7 +2959,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 246,
@@ -2971,7 +2971,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 247,
@@ -2983,7 +2983,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 248,
@@ -2995,7 +2995,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 249,
@@ -3007,7 +3007,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 250,
@@ -3019,7 +3019,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Pressure care"
   },
   {
     "id": 251,
@@ -3031,7 +3031,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Pressure care"
   },
   {
     "id": 252,
@@ -3043,7 +3043,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Mobility & Transfer"
   },
   {
     "id": 253,
@@ -3055,7 +3055,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 254,
@@ -3067,7 +3067,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 255,
@@ -3079,7 +3079,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 256,
@@ -3091,7 +3091,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 257,
@@ -3103,7 +3103,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 258,
@@ -3115,7 +3115,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Pressure care"
   },
   {
     "id": 259,
@@ -3127,7 +3127,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Pressure care"
   },
   {
     "id": 260,
@@ -3139,7 +3139,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Pressure care"
   },
   {
     "id": 261,
@@ -3151,7 +3151,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Pressure care"
   },
   {
     "id": 262,
@@ -3163,7 +3163,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Fall"
+    "category": "Fall prevention"
   },
   {
     "id": 263,
@@ -3523,7 +3523,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Brief"
+    "category": "Personal care"
   },
   {
     "id": 293,
@@ -3559,7 +3559,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Brief"
+    "category": "Personal care"
   },
   {
     "id": 296,
@@ -3571,7 +3571,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Brief"
+    "category": "Personal care"
   },
   {
     "id": 297,
@@ -3583,7 +3583,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Brief"
+    "category": "Personal care"
   },
   {
     "id": 298,
@@ -3823,7 +3823,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Medicine"
+    "category": "Brief"
   },
   {
     "id": 318,
@@ -3835,7 +3835,7 @@
     "expiry": null,
     "needsExpiry": false,
     "note": "",
-    "category": "Medicine"
+    "category": "Brief"
   },
   {
     "id": 319,

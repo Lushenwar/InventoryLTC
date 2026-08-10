@@ -642,11 +642,15 @@ function StatusCell({ status, days, expiry }: { status: StatusKey; days: number 
   return <span className={cls}><span className="d" />No expiry</span>;
 }
 
-// PPE only: boxes are stamped with a manufacture date, so show the one the
+// Boxed PPE only: boxes are stamped with a manufacture date, so show the one the
 // expiry implies. Dropped when it lands in the future -- that means the entered
 // expiry outruns the shelf life, so the derived date would be nonsense.
+//
+// Keyed on unitsPerBox, not on category === "PPE". The category is a filing label anyone can
+// re-file (disposable aprons are PPE and don't expire); unitsPerBox is the actual marker of
+// "counted in boxes, carries a shelf life". Every PPE row that had this behaviour still has it.
 function MfgLine({ it, today }: { it: Product; today: string }) {
-  if (it.category !== "PPE" || !it.expiry) return null;
+  if (it.unitsPerBox == null || !it.expiry) return null;
   const mfg = mfgFromExpiry(it.expiry, it.name);
   if (mfg > today) return null;
   return <div className="expsub">Mfg ~{fmtDate(mfg)} · {shelfLifeYears(it.name)}y shelf life</div>;
@@ -710,7 +714,7 @@ function EditModal({
           <label>Expiry date</label>
           <input ref={expRef} type="date" value={expiry} autoFocus={focusExpiry} onChange={(e) => { setExpiry(e.target.value); setMfg(""); }} />
         </div>
-        {product.category === "PPE" && (
+        {product.unitsPerBox != null && (
           <div className="field">
             <label>…or the manufacture date stamped on the box</label>
             <input
@@ -1330,9 +1334,11 @@ function ReceiveModal({
   const qtyBoxes = upb
     ? qtyEntered > 0 ? Math.max(1, Math.round(qtyEntered / upb)) : 0
     : Math.max(1, qtyEntered);
-  // PPE cartons always carry one of the two dates, and an undated PPE lot can't be
-  // tracked or alerted on, so require it rather than letting a dateless row through.
-  const needsDate = selected?.category === "PPE" && !recvExpiry;
+  // Boxed PPE cartons always carry one of the two dates, and an undated lot can't be tracked or
+  // alerted on, so require it rather than letting a dateless row through. Keyed on unitsPerBox
+  // rather than the category, so re-filing a non-expiring item (an apron) as PPE doesn't start
+  // demanding a date nobody can read off the box.
+  const needsDate = upb != null && !recvExpiry;
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = q
@@ -1429,11 +1435,11 @@ function ReceiveModal({
                 )}
               </div>
               <div className="field">
-                <label>{selected?.category === "PPE" ? "New expiry (required)" : "New expiry (optional)"}</label>
+                <label>{upb != null ? "New expiry (required)" : "New expiry (optional)"}</label>
                 <input type="date" value={recvExpiry} onChange={(e) => { setRecvExpiry(e.target.value); setRecvMfg(""); }} />
               </div>
             </div>
-            {selected?.category === "PPE" && (
+            {upb != null && selected && (
               <div className="field">
                 <label>…or the manufacture date stamped on the box</label>
                 <input
