@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       uom: body.uom ? String(body.uom).trim() : "EA",
       stock,
       location,
+      category: body.category ? String(body.category).trim() : null,
       expiry,
       needsExpiry,
       note: body.note ? String(body.note).trim() : "",

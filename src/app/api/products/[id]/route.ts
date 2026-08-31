@@ -32,6 +32,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const badQty = checkQty(stock, "On hand");
   if (badQty) return NextResponse.json({ error: badQty }, { status: 400 });
   const location = body.location !== undefined ? String(body.location).trim() : existing.location;
+  const category = body.category !== undefined ? String(body.category).trim() || null : existing.category;
   const expiry: string | null = body.expiry !== undefined ? body.expiry || null : existing.expiry;
   const needsExpiry = expiry
     ? false
@@ -44,7 +45,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const [updated] = await db
     .update(products)
-    .set({ name, code, uom, stock, location, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: "admin", ...(expiryChanged ? { expiredNotified: false } : {}) })
+    .set({ name, code, uom, stock, location, category, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: "admin", ...(expiryChanged ? { expiredNotified: false } : {}) })
     .where(eq(products.id, id))
     .returning();
 

@@ -602,6 +602,7 @@ export default function InventoryApp({
           product={modal.product}
           focusExpiry={modal.focusExpiry}
           locations={locations}
+          categories={categories}
           onClose={() => setModal({ type: "closed" })}
           onSave={(payload) => submitEdit(modal.product.id, payload)}
         />
@@ -619,6 +620,7 @@ export default function InventoryApp({
           presetId={modal.presetId}
           products={allProducts}
           locations={locations}
+          categories={categories}
           onClose={() => setModal({ type: "closed" })}
           onCreate={submitCreate}
           onReceiveMany={submitReceiveMany}
@@ -717,12 +719,14 @@ function EditModal({
   product,
   focusExpiry,
   locations,
+  categories,
   onClose,
   onSave,
 }: {
   product: Product;
   focusExpiry?: boolean;
   locations: string[];
+  categories: string[];
   onClose: () => void;
   onSave: (payload: Record<string, unknown>) => void;
 }) {
@@ -731,6 +735,7 @@ function EditModal({
   const [uom, setUom] = useState(product.uom);
   const [stock, setStock] = useState(String(product.stock));
   const [location, setLocation] = useState(product.location);
+  const [category, setCategory] = useState(product.category ?? "");
   const [expiry, setExpiry] = useState(product.expiry ?? "");
   const [mfg, setMfg] = useState(""); // PPE only; writes the derived date into expiry
   const [needsExpiry, setNeedsExpiry] = useState(product.needsExpiry);
@@ -764,6 +769,13 @@ function EditModal({
               ))}
             </select>
           </div>
+        </div>
+        <div className="field">
+          <label>Category</label>
+          {/* ponytail: input+datalist, not a <select> -- picks from the existing list and still
+              lets a genuinely new category be typed, without a manage-categories screen. */}
+          <input list="cat-list" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. PPE" />
+          <CategoryList categories={categories} />
         </div>
         <div className="field">
           <label>Expiry date</label>
@@ -800,6 +812,7 @@ function EditModal({
               uom: uom.trim() || "EA",
               stock: Math.max(0, parseInt(stock) || 0),
               location,
+              category: category.trim(),
               expiry: expiry || null,
               needsExpiry,
               note: note.trim(),
@@ -1351,6 +1364,7 @@ function ReceiveModal({
   presetId,
   products,
   locations,
+  categories,
   onClose,
   onCreate,
   onReceiveMany,
@@ -1359,6 +1373,7 @@ function ReceiveModal({
   presetId?: number;
   products: Product[];
   locations: string[];
+  categories: string[];
   onClose: () => void;
   onCreate: (payload: Record<string, unknown>) => void;
   onReceiveMany: (lines: { id: number; qty: number; expiry: string | null }[]) => void;
@@ -1425,6 +1440,7 @@ function ReceiveModal({
   const [uom, setUom] = useState("EA");
   const [newQty, setNewQty] = useState("1");
   const [location, setLocation] = useState(preset?.location ?? locations[0] ?? "");
+  const [category, setCategory] = useState(preset?.category ?? "");
   const [newExpiry, setNewExpiry] = useState("");
   const [needsExpiry, setNeedsExpiry] = useState(false);
 
@@ -1547,6 +1563,11 @@ function ReceiveModal({
                 </select>
               </div>
             </div>
+            <div className="field">
+              <label>Category</label>
+              <input list="cat-list" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. PPE" />
+              <CategoryList categories={categories} />
+            </div>
             <div className="field"><label>Expiry date (optional)</label><input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} /></div>
             <label className="chk">
               <input type="checkbox" checked={needsExpiry} onChange={(e) => setNeedsExpiry(e.target.checked)} disabled={!!newExpiry} />
@@ -1574,6 +1595,7 @@ function ReceiveModal({
                   uom: uom.trim() || "EA",
                   stock: Math.max(0, parseInt(newQty) || 0),
                   location,
+                  category: category.trim(),
                   expiry: newExpiry || null,
                   needsExpiry,
                 });
@@ -1587,6 +1609,16 @@ function ReceiveModal({
         </button>
       </div>
     </Overlay>
+  );
+}
+
+function CategoryList({ categories }: { categories: string[] }) {
+  return (
+    <datalist id="cat-list">
+      {categories.map((c) => (
+        <option key={c} value={c} />
+      ))}
+    </datalist>
   );
 }
 
