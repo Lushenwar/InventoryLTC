@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
+import { checkQty } from "@/lib/limits";
 
 // HAA (Home Assistant Aide) pickup: one order removes stock from several lots at once.
 // Each line is logged as a `pickup` event sharing the same `at` timestamp + note, so the
@@ -17,6 +18,10 @@ export async function POST(req: NextRequest) {
     .map((it: { id: unknown; qty: unknown }) => ({ id: Number(it.id), qty: Number(it.qty) }))
     .filter((it: { id: number; qty: number }) => it.id && Number.isFinite(it.qty) && it.qty > 0);
   if (!items.length) return NextResponse.json({ error: "Add at least one item to the order" }, { status: 400 });
+  for (const it of items) {
+    const bad = checkQty(it.qty, "Pickup quantity");
+    if (bad) return NextResponse.json({ error: bad }, { status: 400 });
+  }
 
   const ids = items.map((it: { id: number }) => it.id);
   const rows = await db.select({ id: products.id, stock: products.stock, name: products.name }).from(products).where(inArray(products.id, ids));

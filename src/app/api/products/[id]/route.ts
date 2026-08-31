@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
+import { checkQty } from "@/lib/limits";
 import { adminGate } from "@/lib/admin";
 
 // Per-item history: this product's event timeline, newest first.
@@ -28,7 +29,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const code = body.code !== undefined ? String(body.code).trim() || null : existing.code;
   const uom = body.uom !== undefined ? String(body.uom).trim() || "EA" : existing.uom;
   const stock = body.stock !== undefined ? Math.max(0, Number(body.stock) || 0) : existing.stock;
+  const badQty = checkQty(stock, "On hand");
+  if (badQty) return NextResponse.json({ error: badQty }, { status: 400 });
   const location = body.location !== undefined ? String(body.location).trim() : existing.location;
+  const category = body.category !== undefined ? String(body.category).trim() || null : existing.category;
   const expiry: string | null = body.expiry !== undefined ? body.expiry || null : existing.expiry;
   const needsExpiry = expiry
     ? false
@@ -41,7 +45,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const [updated] = await db
     .update(products)
-    .set({ name, code, uom, stock, location, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: "admin", ...(expiryChanged ? { expiredNotified: false } : {}) })
+    .set({ name, code, uom, stock, location, category, expiry, needsExpiry, note, updatedAt: new Date(), updatedBy: "admin", ...(expiryChanged ? { expiredNotified: false } : {}) })
     .where(eq(products.id, id))
     .returning();
 

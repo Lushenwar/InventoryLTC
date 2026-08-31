@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, products, events } from "@/lib/db";
+import { checkQty } from "@/lib/limits";
 import { adminGate } from "@/lib/admin";
 
 export async function POST(req: NextRequest) {
@@ -13,6 +14,8 @@ export async function POST(req: NextRequest) {
   if (!location) return NextResponse.json({ error: "Location is required" }, { status: 400 });
 
   const stock = Math.max(0, Number(body.stock) || 0);
+  const badQty = checkQty(stock, "Quantity received");
+  if (badQty) return NextResponse.json({ error: badQty }, { status: 400 });
   const expiry: string | null = body.expiry || null;
   const needsExpiry = expiry ? false : Boolean(body.needsExpiry);
 
@@ -24,6 +27,7 @@ export async function POST(req: NextRequest) {
       uom: body.uom ? String(body.uom).trim() : "EA",
       stock,
       location,
+      category: body.category ? String(body.category).trim() : null,
       expiry,
       needsExpiry,
       note: body.note ? String(body.note).trim() : "",

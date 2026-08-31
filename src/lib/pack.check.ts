@@ -1,6 +1,6 @@
 // Run: npx tsx src/lib/pack.check.ts
 import assert from "node:assert";
-import { packSize, snapQty } from "./pack";
+import { packSize, receiveBoxes, snapQty } from "./pack";
 
 const cases: [string, number][] = [
   ["0.9% sodium chloride ... flush syringe, 30/box", 30],
@@ -46,4 +46,31 @@ assert.deepStrictEqual(snap(6_000), { boxes: 20, warn: null }, "exactly the maxi
 assert.deepStrictEqual(snapQty(7, null, 20), { boxes: 7, warn: null });
 assert.strictEqual(snapQty(999, null, 20, "EA").boxes, 20);
 
-console.log(`ok: ${cases.length} pack-size cases and the pickup quantity snap`);
+// --- receiveBoxes: stock going ON the shelf. Must never round up. ---
+//
+// The bug this pins: receiving 400 pieces of a 250/box glove used to book 2 boxes = 500 pieces,
+// inventing 100 that never arrived. Receiving and picking up now round the same way -- down.
+assert.strictEqual(receiveBoxes(500, 250), 2, "an exact multiple is itself");
+assert.strictEqual(receiveBoxes(400, 250), 1, "400 pieces is one box, not two");
+assert.strictEqual(receiveBoxes(749, 250), 2);
+assert.strictEqual(receiveBoxes(750, 250), 3);
+// Under one box books nothing, so the caller can explain instead of inventing a box.
+assert.strictEqual(receiveBoxes(100, 250), 0);
+assert.strictEqual(receiveBoxes(249, 250), 0);
+assert.strictEqual(receiveBoxes(0, 250), 0);
+assert.strictEqual(receiveBoxes(-5, 250), 0, "a negative entry books nothing");
+// No box size: the entry is already in the stocked unit.
+assert.strictEqual(receiveBoxes(7, null), 7);
+assert.strictEqual(receiveBoxes(0, null), 0);
+// Receiving and picking up agree on where a part-box lands, for every size in the catalogue.
+for (const per of [20, 50, 100, 150, 230, 250, 300, 440, 1920]) {
+  for (const pieces of [per - 1, per, per + 1, per * 3 + 7, per * 10]) {
+    const recv = receiveBoxes(pieces, per);
+    assert.strictEqual(recv, Math.floor(pieces / per), `receive ${pieces}@${per}`);
+    if (recv >= 1) {
+      assert.strictEqual(snapQty(pieces, per, 9_999).boxes, recv, `receive and pickup agree at ${pieces}@${per}`);
+    }
+  }
+}
+
+console.log(`ok: ${cases.length} pack-size cases, the pickup quantity snap, and receive box rounding`);

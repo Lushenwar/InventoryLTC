@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from "@/lib/expiry";
 import { isoWeekEnd, isoWeekOf, isoWeekStart, weeksInIsoYear } from "@/lib/weeks";
-import { expiryFromMfg, mfgFromExpiry, shelfLifeYears } from "@/lib/shelflife";
-import { packSize, snapQty } from "@/lib/pack";
+import { expiryFromMfg, shelfLifeYears } from "@/lib/shelflife";
+import { packSize, receiveBoxes, snapQty } from "@/lib/pack";
 import type { Counts, Product } from "@/lib/types";
 import ReminderPanel from "./ReminderPanel";
 
@@ -34,6 +34,28 @@ type ModalState =
 type CartLine = { id: number; name: string; uom: string; qty: number; max: number; unitsPerBox: number | null };
 
 const ADMIN_SESSION_KEY = "steward_admin_passcode";
+// The cart is the one thing floor staff build up over minutes, and a phone browser will happily
+// evict this tab while they check a message. Survives a reload; cleared once the order is filed.
+const CART_KEY = "inventory_date_pickup_cart";
+
+type Sent = { ok: true; body: any } | { ok: false; error: string };
+
+/**
+ * Every write goes through here. Supply-room wifi drops, and a bare `await fetch` throws on a
+ * dead connection -- which escaped the click handler, left the button stuck on "Recording…"
+ * forever, and told staff nothing. A dropped request is now an ordinary error they can retry.
+ */
+async function send(url: string, init: RequestInit): Promise<Sent> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch {
+    return { ok: false, error: "No connection — nothing was saved. Check wifi and try again." };
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: body.error || `Something went wrong (${res.status}). Nothing was saved.` };
+  return { ok: true, body };
+}
 
 function fmtDate(s: string | null): string {
   if (!s) return "";
@@ -95,6 +117,41 @@ export default function InventoryApp({
   useEffect(() => {
     setAdminPasscodeState(sessionStorage.getItem(ADMIN_SESSION_KEY));
   }, []);
+
+  // Restore an unfinished order. Every line is re-read against live stock rather than trusted
+  // from storage -- the saved copy could be hours old, and someone else may have taken the box
+  // or the product may be gone. Lines that no longer hold up are dropped, not silently clamped
+  // to something the shelf can't cover.
+  const cartLoaded = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CART_KEY) ?? "[]") as CartLine[];
+      const live = new Map(allProducts.map((p) => [p.id, p]));
+      const restored = saved.flatMap((l): CartLine[] => {
+        const p = live.get(l.id);
+        if (!p || p.stock <= 0) return [];
+        return [{ id: p.id, name: p.name, uom: p.uom, unitsPerBox: p.unitsPerBox, max: p.stock, qty: Math.min(l.qty, p.stock) }];
+      });
+      if (restored.length) {
+        setCart(restored);
+        setPickupMode(true); // put them back where they left off, dock and all
+        if (restored.length < saved.length) showToast("Some items were removed — stock changed while you were away.");
+      }
+    } catch {
+      // A corrupt or unreadable cart is not worth blocking the app over.
+    }
+    cartLoaded.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!cartLoaded.current) return; // don't blank the saved cart before it has been read
+    try {
+      localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    } catch {
+      // Private mode / full storage: the cart still works for this session.
+    }
+  }, [cart]);
 
   function setAdminPasscode(code: string | null) {
     setAdminPasscodeState(code);
@@ -168,17 +225,15 @@ export default function InventoryApp({
     router.refresh();
   }
 
+  const jsonPost = (body: unknown) => ({
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body),
+  });
+
   async function submitCreate(payload: Record<string, unknown>) {
-    const res = await fetch("/api/products", {
-      method: "POST",
-      headers: adminHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not add product");
-      return;
-    }
+    const r = await send("/api/products", jsonPost(payload));
+    if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast(`Added "${payload.name}"`);
@@ -186,85 +241,66 @@ export default function InventoryApp({
 
   // Loops the single-line /api/receive per cart line so all the lot logic lives in one place.
   // Not one transaction, but receiving is additive (no negative-stock risk), so applied lines stand.
+  // Stops at the first failure: carrying on would pile more half-applied lines onto a delivery
+  // that already needs checking, and the toast names how many did land.
   async function submitReceiveMany(lines: { id: number; qty: number; expiry: string | null }[]) {
-    const oks: boolean[] = [];
+    let done = 0;
     for (const l of lines) {
-      const res = await fetch("/api/receive", {
-        method: "POST",
-        headers: adminHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(l),
-      });
-      oks.push(res.ok);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        showToast(body.error || "Could not receive one line");
+      const r = await send("/api/receive", jsonPost(l));
+      if (!r.ok) {
+        showToast(done ? `${r.error} ${done} of ${lines.length} line(s) were saved.` : r.error);
+        break;
       }
+      done++;
     }
     setModal({ type: "closed" });
     await refreshAfterMutation();
-    const done = oks.filter(Boolean).length;
-    if (oks.every(Boolean) && done) showToast(`Received ${done} line(s)`);
+    if (done === lines.length) showToast(`Received ${done} line(s)`);
   }
 
   async function submitRemove(payload: { id: number; qty: number; reason: string }) {
-    const res = await fetch("/api/remove", {
-      method: "POST",
-      headers: adminHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not remove stock");
-      return;
-    }
+    const r = await send("/api/remove", jsonPost(payload));
+    if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast(`Removed ${payload.qty} unit(s)`);
   }
 
   // Returns true on success so the cart dock knows to reset its own busy/unit/picker state.
+  // The cart is only emptied once the server has confirmed the order -- a failed send leaves it
+  // exactly as it was so they can retry without rebuilding it.
   async function submitPickup(unit: string, picker: string): Promise<boolean> {
-    const res = await fetch("/api/haa-pickup", {
+    const r = await send("/api/haa-pickup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items: cart.map((l) => ({ id: l.id, qty: l.qty })), unit, picker }),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not record pickup");
+    if (!r.ok) {
+      showToast(r.error);
       return false;
     }
-    const body = await res.json();
     setCart([]);
     setPickupMode(false);
     await refreshAfterMutation();
-    showToast(`Recorded HAA pickup · ${body.count} item(s)`);
+    showToast(`Recorded HAA pickup · ${r.body.count} item(s)`);
     return true;
   }
 
   async function submitEdit(id: number, payload: Record<string, unknown>) {
-    const res = await fetch(`/api/products/${id}`, {
+    const r = await send(`/api/products/${id}`, {
       method: "PATCH",
       headers: adminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not save changes");
-      return;
-    }
+    if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast("Saved changes");
   }
 
   async function submitDelete(id: number, name: string) {
-    const res = await fetch(`/api/products/${id}`, { method: "DELETE", headers: adminHeaders() });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      showToast(body.error || "Could not delete product");
-      return;
-    }
+    const r = await send(`/api/products/${id}`, { method: "DELETE", headers: adminHeaders() });
+    if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast(`Deleted "${name}"`);
@@ -272,7 +308,7 @@ export default function InventoryApp({
 
   const statCards = [
     { lab: "Products tracked", val: counts.all, sub: `${counts.onhand.toLocaleString()} units on hand`, edge: "var(--primary)", status: "all" },
-    { lab: "Expiring ≤90 days", val: counts.soon + counts.watch, sub: "within the next 3 months", edge: "var(--soon)", status: "soon90" },
+    { lab: "Expiring soon", val: counts.soon + counts.watch, sub: "within the next 3 months", edge: "var(--soon)", status: "soon90" },
     { lab: "Expired", val: counts.expired, sub: "remove or verify", edge: "var(--expired)", status: "expired" },
     { lab: "Needs expiry date", val: counts.flag, sub: "flagged for review", edge: "var(--flag)", status: "flag" },
     { lab: "Out of stock", val: counts.oos, sub: "reorder check", edge: "var(--muted)", status: "oos" },
@@ -281,8 +317,8 @@ export default function InventoryApp({
   const chips = [
     { k: "all", label: "All", n: counts.all },
     { k: "expired", label: "Expired", n: counts.expired },
-    { k: "soon", label: "≤30 days", n: counts.soon },
-    { k: "watch", label: "31–90 days", n: counts.watch },
+    { k: "soon", label: "Under 30 days", n: counts.soon },
+    { k: "watch", label: "1 to 3 months", n: counts.watch },
     { k: "flag", label: "Needs date", n: counts.flag },
     { k: "none", label: "No expiry", n: counts.none },
     { k: "ok", label: "In date", n: counts.ok },
@@ -380,6 +416,21 @@ export default function InventoryApp({
               </option>
             ))}
           </select>
+          {/* Exports exactly what the filters above are showing, so a manager can narrow to a room
+              or to "expiring soon" and hand that list to whoever is counting. */}
+          <a
+            className="btn"
+            href={`/api/inventory/export?${new URLSearchParams(
+              Object.entries(filters).filter(([, v]) => v && v !== "all") as [string, string][],
+            )}`}
+            download
+            title="Download this list as a spreadsheet"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
+            </svg>
+            Export list
+          </a>
           <div className="chips">
             {chips.map((c) => (
               <button
@@ -401,8 +452,8 @@ export default function InventoryApp({
                 <th onClick={() => toggleSort("name")}>Product <span className="arr">{sortArrow("name")}</span></th>
                 <th className="hide-md" onClick={() => toggleSort("location")}>Location <span className="arr">{sortArrow("location")}</span></th>
                 <th className="hide-md" onClick={() => toggleSort("category")}>Category <span className="arr">{sortArrow("category")}</span></th>
-                <th onClick={() => toggleSort("stock")}>On hand <span className="arr">{sortArrow("stock")}</span></th>
-                <th className="no-sort">Quantity</th>
+                <th onClick={() => toggleSort("stock")}>Boxes on shelf <span className="arr">{sortArrow("stock")}</span></th>
+                <th className="no-sort">Total pieces</th>
                 <th onClick={() => toggleSort("expiry")}>Expiry status <span className="arr">{sortArrow("expiry")}</span></th>
                 <th className="no-sort" style={{ textAlign: "right" }}>Actions</th>
               </tr>
@@ -418,6 +469,9 @@ export default function InventoryApp({
                       <button className="pnamebtn" title="View history" onClick={() => setModal({ type: "history", product: it })}>
                         <span className="pname">{it.name || <span style={{ color: "var(--faint)" }}>Unnamed</span>}</span>
                         <span className="pcode">{it.code || "—"}</span>
+                        {/* The Location column is hidden on phones, and "which room" is the second
+                            thing anyone needs. Repeat it here so it survives the narrow layout. */}
+                        <span className="ploc">{it.location || "—"}</span>
                       </button>
                     </td>
                     <td className="hide-md">
@@ -441,7 +495,6 @@ export default function InventoryApp({
                     </td>
                     <td>
                       <StatusCell status={s.key} days={s.days} expiry={it.expiry} />
-                      <MfgLine it={it} today={today} />
                       {it.note && (
                         <div className="expsub" title={it.note}>
                           ⚑ {it.note.replace(/\n/g, " · ")}
@@ -549,6 +602,7 @@ export default function InventoryApp({
           product={modal.product}
           focusExpiry={modal.focusExpiry}
           locations={locations}
+          categories={categories}
           onClose={() => setModal({ type: "closed" })}
           onSave={(payload) => submitEdit(modal.product.id, payload)}
         />
@@ -566,6 +620,7 @@ export default function InventoryApp({
           presetId={modal.presetId}
           products={allProducts}
           locations={locations}
+          categories={categories}
           onClose={() => setModal({ type: "closed" })}
           onCreate={submitCreate}
           onReceiveMany={submitReceiveMany}
@@ -631,30 +686,32 @@ function statusEdge(key: StatusKey): string {
   return edges[key];
 }
 
+/**
+ * The date leads; the badge explains it.
+ *
+ * It used to be the other way round -- an 11px grey date under a bold "In date" badge. Two lots of
+ * the same glove differ ONLY by their date, so the one fact that tells them apart was the faintest
+ * thing in the row, while the word that was identical on both was the loudest. Anyone picking the
+ * wrong lot was being set up by the layout.
+ */
 function StatusCell({ status, days, expiry }: { status: StatusKey; days: number | null; expiry: string | null }) {
   const cls = `badge ${STATUS_META[status].cls}`;
-  if (status === "oos") return <span className={cls}><span className="d" />Out of stock</span>;
-  if (status === "expired") return (<><span className={cls}><span className="d" />Expired</span><div className="expsub">{fmtDate(expiry)} · {Math.abs(days ?? 0)}d ago</div></>);
-  if (status === "soon") return (<><span className={cls}><span className="d" />{days}d left</span><div className="expsub">{fmtDate(expiry)}</div></>);
-  if (status === "watch") return (<><span className={cls}><span className="d" />{days}d left</span><div className="expsub">{fmtDate(expiry)}</div></>);
-  if (status === "ok") return (<><span className={cls}><span className="d" />In date</span><div className="expsub">{fmtDate(expiry)}</div></>);
-  if (status === "flag") return <span className={cls}><span className="d" />Needs date</span>;
-  return <span className={cls}><span className="d" />No expiry</span>;
+  // Out of stock, needs-a-date and no-expiry have no date to lead with, so the badge is the answer.
+  if (!expiry || status === "oos") return <span className={cls}><span className="d" />{STATUS_META[status].label}</span>;
+
+  const d = Math.abs(days ?? 0);
+  const plural = (n: number) => (n === 1 ? "day" : "days");
+  return (
+    <>
+      <div className={`expdate ${status === "expired" ? "gone" : ""}`}>{fmtDate(expiry)}</div>
+      <span className={cls}>
+        <span className="d" />
+        {status === "expired" ? `Expired ${d} ${plural(d)} ago` : status === "ok" ? "In date" : `${d} ${plural(d)} left`}
+      </span>
+    </>
+  );
 }
 
-// Boxed PPE only: boxes are stamped with a manufacture date, so show the one the
-// expiry implies. Dropped when it lands in the future -- that means the entered
-// expiry outruns the shelf life, so the derived date would be nonsense.
-//
-// Keyed on unitsPerBox, not on category === "PPE". The category is a filing label anyone can
-// re-file (disposable aprons are PPE and don't expire); unitsPerBox is the actual marker of
-// "counted in boxes, carries a shelf life". Every PPE row that had this behaviour still has it.
-function MfgLine({ it, today }: { it: Product; today: string }) {
-  if (it.unitsPerBox == null || !it.expiry) return null;
-  const mfg = mfgFromExpiry(it.expiry, it.name);
-  if (mfg > today) return null;
-  return <div className="expsub">Mfg ~{fmtDate(mfg)} · {shelfLifeYears(it.name)}y shelf life</div>;
-}
 
 // Only reachable with admin unlocked -- InventoryApp's `guard` asks for the passcode before
 // the form opens, so there is no per-field passcode prompt in here any more.
@@ -662,12 +719,14 @@ function EditModal({
   product,
   focusExpiry,
   locations,
+  categories,
   onClose,
   onSave,
 }: {
   product: Product;
   focusExpiry?: boolean;
   locations: string[];
+  categories: string[];
   onClose: () => void;
   onSave: (payload: Record<string, unknown>) => void;
 }) {
@@ -676,6 +735,7 @@ function EditModal({
   const [uom, setUom] = useState(product.uom);
   const [stock, setStock] = useState(String(product.stock));
   const [location, setLocation] = useState(product.location);
+  const [category, setCategory] = useState(product.category ?? "");
   const [expiry, setExpiry] = useState(product.expiry ?? "");
   const [mfg, setMfg] = useState(""); // PPE only; writes the derived date into expiry
   const [needsExpiry, setNeedsExpiry] = useState(product.needsExpiry);
@@ -709,6 +769,13 @@ function EditModal({
               ))}
             </select>
           </div>
+        </div>
+        <div className="field">
+          <label>Category</label>
+          {/* ponytail: input+datalist, not a <select> -- picks from the existing list and still
+              lets a genuinely new category be typed, without a manage-categories screen. */}
+          <input list="cat-list" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. PPE" />
+          <CategoryList categories={categories} />
         </div>
         <div className="field">
           <label>Expiry date</label>
@@ -745,6 +812,7 @@ function EditModal({
               uom: uom.trim() || "EA",
               stock: Math.max(0, parseInt(stock) || 0),
               location,
+              category: category.trim(),
               expiry: expiry || null,
               needsExpiry,
               note: note.trim(),
@@ -852,11 +920,13 @@ type EventRow = { id: number; kind: string; qtyDelta: number | null; expirySet: 
 
 function describeEvent(e: EventRow, uom: string): string {
   switch (e.kind) {
-    case "create": return `Created${e.qtyDelta ? ` · ${e.qtyDelta} ${uom}` : ""}`;
-    case "receive": return `Received +${e.qtyDelta ?? 0}${e.expirySet ? ` · exp ${e.expirySet}` : ""}`;
-    case "adjust": return (e.qtyDelta ?? 0) < 0 ? `Removed ${e.qtyDelta}` : `Adjusted +${e.qtyDelta ?? 0}`;
-    case "pickup": return `HAA pickup ${e.qtyDelta ?? 0} ${uom}`;
-    case "set_expiry": return `Expiry set to ${e.expirySet ?? "—"}`;
+    // Quantities are stored signed, but "Removed -3" reads as removing minus three. The word
+    // already says the direction, so the number is always shown as a plain count.
+    case "create": return `Added to the list${e.qtyDelta ? ` · ${e.qtyDelta} ${uom}` : ""}`;
+    case "receive": return `Received ${e.qtyDelta ?? 0} ${uom}${e.expirySet ? ` · expires ${fmtDate(e.expirySet)}` : ""}`;
+    case "adjust": return (e.qtyDelta ?? 0) < 0 ? `Removed ${Math.abs(e.qtyDelta ?? 0)} ${uom}` : `Added back ${e.qtyDelta ?? 0} ${uom}`;
+    case "pickup": return `Picked up ${Math.abs(e.qtyDelta ?? 0)} ${uom}`;
+    case "set_expiry": return `Expiry date set to ${e.expirySet ? fmtDate(e.expirySet) : "—"}`;
     case "delete": return "Deleted";
     default: return e.kind;
   }
@@ -1014,8 +1084,8 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
         <label htmlFor="exp-kind">Include</label>
         <select id="exp-kind" value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">Received and issued</option>
-          <option value="receive">Received only</option>
-          <option value="pickup">Issued only (HAA pickups)</option>
+          <option value="receive">Received only (deliveries, corrections up)</option>
+          <option value="pickup">Issued only (pickups, removals)</option>
         </select>
       </div>
       <div className="field">
@@ -1052,7 +1122,7 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
           <span style={{ color: "var(--expired)" }}>No item matches “{item.trim()}”. Clear the box to export every item.</span>
         ) : (
           <>
-            {kind === "receive" ? "Receives" : kind === "pickup" ? "HAA pickups" : "Receives and HAA pickups"}
+            {kind === "receive" ? "Stock in" : kind === "pickup" ? "Stock out" : "Stock in and out"}
             {picked ? ` of ${picked.name}` : family.length ? ` of ${family.length} items matching “${item.trim()}”` : ""} from{" "}
             {shortDay(start)} to {shortDay(end)}, as a CSV that opens in Excel.
             {family.length > 1
@@ -1060,7 +1130,9 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
               : picked || family.length
                 ? " The last lines read opening stock, received against issued, then the stock actually on hand today."
                 : " The last line totals received against issued."}
-            {" "}PPE quantities are in pieces. Adding, editing, and deleting items are left out.
+            {" "}PPE quantities are in pieces. Every movement counts: deliveries, HAA pickups, stock
+            removed or corrected, and what a new product was first logged with. Renaming and deleting
+            items are left out — they don’t change a count.
           </>
         )}
       </span>
@@ -1292,6 +1364,7 @@ function ReceiveModal({
   presetId,
   products,
   locations,
+  categories,
   onClose,
   onCreate,
   onReceiveMany,
@@ -1300,6 +1373,7 @@ function ReceiveModal({
   presetId?: number;
   products: Product[];
   locations: string[];
+  categories: string[];
   onClose: () => void;
   onCreate: (payload: Record<string, unknown>) => void;
   onReceiveMany: (lines: { id: number; qty: number; expiry: string | null }[]) => void;
@@ -1326,14 +1400,11 @@ function ReceiveModal({
   // PPE items (unitsPerBox set) are received as total pieces; stock is in boxes, so convert.
   const upb = selected?.unitsPerBox ?? null;
   const qtyEntered = parseInt(qty) || 0;
-  // Stock is whole boxes, so a piece count that isn't a multiple of the box has to snap.
-  // Snapping is always shown in the preview below -- rounding silently would invent or
-  // destroy stock (400 pcs of a 250/box glove is 500 stored, 1 pc is nothing).
-  // Floor at one box for any non-zero entry: rounding under half a box down to 0 left
-  // Receive greyed out with nothing on screen explaining why.
-  const qtyBoxes = upb
-    ? qtyEntered > 0 ? Math.max(1, Math.round(qtyEntered / upb)) : 0
-    : Math.max(1, qtyEntered);
+  // Stock is whole boxes, so a piece count that isn't a multiple of the box has to snap -- always
+  // downwards (see receiveBoxes). Anything the entry loses is shown in the preview below, and an
+  // entry under one full box books nothing and says why, rather than quietly inventing a box.
+  const qtyBoxes = receiveBoxes(qtyEntered, upb);
+  const underOneBox = upb != null && qtyEntered > 0 && qtyBoxes === 0;
   // Boxed PPE cartons always carry one of the two dates, and an undated lot can't be tracked or
   // alerted on, so require it rather than letting a dateless row through. Keyed on unitsPerBox
   // rather than the category, so re-filing a non-expiring item (an apron) as PPE doesn't start
@@ -1369,6 +1440,7 @@ function ReceiveModal({
   const [uom, setUom] = useState("EA");
   const [newQty, setNewQty] = useState("1");
   const [location, setLocation] = useState(preset?.location ?? locations[0] ?? "");
+  const [category, setCategory] = useState(preset?.category ?? "");
   const [newExpiry, setNewExpiry] = useState("");
   const [needsExpiry, setNeedsExpiry] = useState(false);
 
@@ -1428,9 +1500,11 @@ function ReceiveModal({
                 <label>{upb ? "Total quantity received (pieces)" : "Quantity received"}</label>
                 <input type="number" min={upb ?? 1} step={upb ?? 1} value={qty} onChange={(e) => setQty(e.target.value)} />
                 {upb && selected && (
-                  <span className="combo-sel">
-                    = {qtyBoxes} {selected.uom} ({(qtyBoxes * upb).toLocaleString()} pcs, {upb}/box)
-                    {qtyBoxes * upb !== qtyEntered && ` — snapped from ${qtyEntered.toLocaleString()}`}
+                  <span className="combo-sel" style={underOneBox ? { color: "var(--flag)" } : undefined}>
+                    {underOneBox
+                      ? `${qtyEntered.toLocaleString()} pcs is less than one box of ${upb} — enter at least ${upb}.`
+                      : <>= {qtyBoxes} {selected.uom} ({(qtyBoxes * upb).toLocaleString()} pcs, {upb}/box)
+                          {qtyBoxes * upb !== qtyEntered && ` — ${(qtyEntered - qtyBoxes * upb).toLocaleString()} pcs short of the next full box, so ${(qtyBoxes * upb).toLocaleString()} is booked in`}</>}
                   </span>
                 )}
               </div>
@@ -1489,6 +1563,11 @@ function ReceiveModal({
                 </select>
               </div>
             </div>
+            <div className="field">
+              <label>Category</label>
+              <input list="cat-list" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. PPE" />
+              <CategoryList categories={categories} />
+            </div>
             <div className="field"><label>Expiry date (optional)</label><input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} /></div>
             <label className="chk">
               <input type="checkbox" checked={needsExpiry} onChange={(e) => setNeedsExpiry(e.target.checked)} disabled={!!newExpiry} />
@@ -1516,6 +1595,7 @@ function ReceiveModal({
                   uom: uom.trim() || "EA",
                   stock: Math.max(0, parseInt(newQty) || 0),
                   location,
+                  category: category.trim(),
                   expiry: newExpiry || null,
                   needsExpiry,
                 });
@@ -1529,6 +1609,16 @@ function ReceiveModal({
         </button>
       </div>
     </Overlay>
+  );
+}
+
+function CategoryList({ categories }: { categories: string[] }) {
+  return (
+    <datalist id="cat-list">
+      {categories.map((c) => (
+        <option key={c} value={c} />
+      ))}
+    </datalist>
   );
 }
 

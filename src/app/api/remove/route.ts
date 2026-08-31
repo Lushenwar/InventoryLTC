@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
+import { checkQty } from "@/lib/limits";
 import { adminGate } from "@/lib/admin";
 
 // Remove/consume stock from a specific lot row (used, wasted, expired-pulled, count fix).
@@ -17,6 +18,8 @@ export async function POST(req: NextRequest) {
   if (!id || !Number.isFinite(qty) || qty <= 0) {
     return NextResponse.json({ error: "id and a positive quantity are required" }, { status: 400 });
   }
+  const bad = checkQty(qty, "Quantity to remove");
+  if (bad) return NextResponse.json({ error: bad }, { status: 400 });
   const reason = body.reason ? String(body.reason).trim() : "";
 
   try {

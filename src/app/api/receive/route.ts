@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, sql } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
+import { checkQty } from "@/lib/limits";
 import { adminGate } from "@/lib/admin";
 
 // A "lot" is a (product, expiry) pair. Receiving stock with a *different* expiry than
@@ -18,6 +19,8 @@ export async function POST(req: NextRequest) {
   if (!id || !Number.isFinite(qty)) {
     return NextResponse.json({ error: "id and qty are required" }, { status: 400 });
   }
+  const bad = checkQty(qty, "Quantity received");
+  if (bad) return NextResponse.json({ error: bad }, { status: 400 });
   const targetExpiry: string | null = body.expiry || null;
 
   const [picked] = await db.select().from(products).where(eq(products.id, id)).limit(1);

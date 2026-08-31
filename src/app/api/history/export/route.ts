@@ -3,12 +3,20 @@ import { and, asc, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db, products, events } from "@/lib/db";
 import { sheetPieces, sheetUnits, txCsv, txCsvGrouped, type OnHand } from "@/lib/txcsv";
 
-// Transaction export for a date range: receives in, HAA pickups out. Deliberately excludes
-// create/edit/delete of the item records themselves -- this reports supply movement, not
-// catalogue housekeeping.
+// Transaction export for a date range: every event that actually moved stock.
 //
-// Filters: ?kind=receive|pickup narrows to one direction, ?item=<name, code, or partial>
-// narrows to a product.
+// That means receives, HAA pickups, stock removals/corrections (`adjust`), and the opening
+// quantity a new product was created with. Only `delete` and `set_expiry` stay out -- they are
+// the catalogue housekeeping this sheet is not about, and neither changes a count.
+//
+// Removals and creates used to be excluded, which broke the arithmetic: the stock they moved was
+// missing from the columns but still reflected in the closing balance, so the opening figure was
+// reverse-engineered into nonsense. One glove line reported an opening stock of -135,000. A
+// ledger that cannot balance is worse than no ledger, because it looks like one.
+//
+// Filters: ?kind=receive|pickup narrows by direction rather than by event type -- "received"
+// covers receives, creates and upward corrections; "issued" covers pickups and removals.
+// ?item=<name, code, or partial> narrows to a product.
 //
 // An exact name/code hit is one item's ledger: its lots and locations, one balance at the
 // bottom. Anything else is read as a family -- "nitrile", "vinyl", "Lrg" -- and lands more
@@ -40,7 +48,14 @@ export async function GET(req: NextRequest) {
   if (kindParam && kindParam !== "receive" && kindParam !== "pickup") {
     return NextResponse.json({ error: "kind must be receive or pickup" }, { status: 400 });
   }
-  const kinds = kindParam ? [kindParam] : ["receive", "pickup"];
+  // Direction, not event type: an adjustment is an issue or a receipt depending on its sign, and
+  // a create is stock arriving. Mirrors `isIssue` in txcsv.ts.
+  const movement =
+    kindParam === "receive"
+      ? sql`(${events.kind} in ('receive','create') or (${events.kind} = 'adjust' and ${events.qtyDelta} > 0))`
+      : kindParam === "pickup"
+        ? sql`(${events.kind} = 'pickup' or (${events.kind} = 'adjust' and ${events.qtyDelta} < 0))`
+        : inArray(events.kind, ["receive", "create", "pickup", "adjust"]);
 
   const item = searchParams.get("item")?.trim() || null;
   let itemMatch: SQL | undefined;
@@ -84,7 +99,7 @@ export async function GET(req: NextRequest) {
     .leftJoin(products, sql`${events.productId} = ${products.id}`)
     .where(
       and(
-        inArray(events.kind, kinds),
+        movement,
         sql`${localDay} between ${start} and ${end}`,
         itemMatch,
       ),
