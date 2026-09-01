@@ -7,13 +7,15 @@ See `CLAUDE.md` for the full product definition, architecture, and build history
 ## Using it (staff)
 
 - **HAA pickup**: the one write that needs no passcode. Toggle it on, hit **Add** on any row, then adjust with the **+ / −** beside the row or in the cart. One step is one box, so a 300/box item moves 300 pieces at a time and stops at what's on hand. You can also type a quantity straight into the cart: it snaps down to whole boxes (1000 → 900 on a 300/box item) and clamps to the maximum, telling you either way.
+- **Undoing a pickup**: if a quantity went in wrong, hit **Undo** on the confirmation that appears after recording — the whole order goes straight back on the shelf, no passcode. That undo stays available for 30 minutes; after that any HAA order can still be undone from **History** (open the order, then **Undo this pickup**), but it needs the admin passcode like every other write that changes a count. Nothing is deleted either way: the order stays in the history with a matching correction beside it, and the transaction sheet nets the two to zero.
+- **Shelf-clearing check**: an order line that takes all or nearly all of what's on hand makes **Record pickup** a two-tap action, listing the lines in question as "40 of 42" first. Ordinary orders are never queried.
 - **History** (click a product's name): the item's full timeline — created, received, removed (with reason), expiry set, etc. — read straight from the append-only `events` log.
 - **Search / location / status filters**: all query the live database directly, not a cached list.
 - **Expiry reminders panel**: pick a window (30/60/90/180 days), copy the message or open it in your email client.
 
 ## Admin actions
 
-Everything that changes a count or a product record needs the shared admin passcode: receive, new product, edit, remove/use stock, set expiry, delete. Click **Admin** (top right) and enter it — it stays unlocked for that browser tab until you click it again to lock, or you close the tab. Clicking a gated action while locked asks for the passcode first and then opens it.
+Everything that changes a count or a product record needs the shared admin passcode: receive, new product, edit, remove/use stock, set expiry, delete, and undoing an HAA pickup more than 30 minutes old. Click **Admin** (top right) and enter it — it stays unlocked for that browser tab until you click it again to lock, or you close the tab. Clicking a gated action while locked asks for the passcode first and then opens it.
 
 - **Receive supply**: top up an existing product's count, optionally setting its expiry off the delivery label. If the delivery has a **different** expiry than the line you pick, it's logged as its own lot — a separate line with its own countdown — so mixed-expiry stock never gets flattened into one date. A matching or blank date just adds to the line you picked.
 - **New product**: log something not already in the catalog.
@@ -23,6 +25,7 @@ Everything that changes a count or a product record needs the shared admin passc
 
 **History → Export** produces a CSV (opens straight in Excel) of receives and HAA pickups over a span of weeks (W1 is the week of the year’s first Monday — 2026 W1 is Jan 5–11), optionally narrowed to one direction and one item or group.
 
+- An **undone pickup** appears as a negative quantity in the *Qty issued* column, noted "Pickup undone", against the same unit and picker as the order it corrects — so a mistyped order and its correction cancel out instead of reading as two withdrawals.
 - **PPE quantities are in pieces**, not boxes — what was physically received and picked up, matching the legacy sheet.
 - When you filter to an item, the sheet closes on the **stock actually on hand today** and works the opening balance back from it, so it reads `opening + received − issued = on hand`. A week that received 250 masks and issued 250 shows `9,000 → 9,000`, not `0` — which is what makes a miscount visible instead of plausible.
 - A search matching several items gives each its own opening/subtotal/closing block plus a grand total; a blended balance across different pack sizes would not be any item's real stock.
