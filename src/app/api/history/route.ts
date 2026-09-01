@@ -30,6 +30,9 @@ export async function GET(req: NextRequest) {
       note: events.note,
       actor: events.actor,
       at: events.at,
+      // Set on the lines that undo an order: the feed uses it to label the correction and to
+      // stop offering "Undo" on an order that already has one.
+      reversesAt: events.reversesAt,
       name: products.name,
       code: products.code,
       location: products.location,

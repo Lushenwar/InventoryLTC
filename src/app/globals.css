@@ -299,6 +299,21 @@
     box-shadow:var(--shadow-lg);opacity:0;transition:.22s;z-index:90;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .toast svg{width:16px;height:16px;color:#7BE8B0}
+  /* The undo lives inside the toast, so it has to read as the action and not as decoration --
+     underlined, full-contrast, and a 44px-tall hit area on the phones this is used from. */
+  .toast .undo{background:none;border:none;color:#fff;font:inherit;font-weight:700;
+    text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px 2px;margin:-6px 0 -6px 6px;
+    min-height:32px}
+  .toast .undo:hover{color:#7BE8B0}
+  /* An undone order is still a real ledger entry, so it is muted rather than struck through --
+     the correction beside it is the story, not a line to skim past. */
+  .histfeed .order.undone summary .histwhat{color:var(--muted)}
+  /* The shelf-clearing check, in the cart footer above the record button. Amber, not red: it is
+     a question about a legitimate order, not a rejection of it. */
+  .checkme{background:var(--soon-soft);border:1px solid var(--soon);border-radius:9px;
+    padding:9px 11px;margin-bottom:9px;font-size:12px;line-height:1.5;color:var(--ink)}
+  .checkme ul{margin:5px 0 0;padding-left:17px}
+  .checkme li{margin-top:2px}
 
   /* Touch devices: the cart steppers are the HAA's main control and were 26px, well under the
      ~44px a thumb needs. Only widened where the pointer is actually coarse, so the desktop
@@ -308,6 +323,7 @@
     .qstep input{height:40px}
     .iconbtn{width:40px;height:40px}
     .cartlist .cx{font-size:24px;padding:0 8px}
+    .toast .undo{padding:12px 8px;margin:-12px 0 -12px 4px}
   }
 
   /* CLAUDE.md requires this and it was missing: honour the OS "reduce motion" setting. */

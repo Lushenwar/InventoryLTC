@@ -24,7 +24,10 @@ export async function POST(req: NextRequest) {
   }
 
   const ids = items.map((it: { id: number }) => it.id);
-  const rows = await db.select({ id: products.id, stock: products.stock, name: products.name }).from(products).where(inArray(products.id, ids));
+  const rows = await db
+    .select({ id: products.id, stock: products.stock, name: products.name, expiry: products.expiry })
+    .from(products)
+    .where(inArray(products.id, ids));
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const it of items) {
     const row = byId.get(it.id);
@@ -42,8 +45,22 @@ export async function POST(req: NextRequest) {
     for (const it of items) {
       await db.update(products).set({ stock: sql`${products.stock} - ${it.qty}`, updatedAt: at }).where(eq(products.id, it.id));
     }
-    await db.insert(events).values(items.map((it: { id: number; qty: number }) => ({ productId: it.id, kind: "pickup", qtyDelta: -it.qty, note, at })));
-    return NextResponse.json({ ok: true, count: items.length });
+    // The lot's expiry is stamped on the event, not just left on the row. A pickup that empties
+    // a lot trips the out-of-stock trigger, which wipes `products.expiry` -- so without this the
+    // date is gone and undoing the order could not put it back. The export already prefers
+    // `expiry_set` over the row's date, so this also pins each line to the lot it actually took.
+    await db.insert(events).values(
+      items.map((it: { id: number; qty: number }) => ({
+        productId: it.id,
+        kind: "pickup",
+        qtyDelta: -it.qty,
+        expirySet: byId.get(it.id)?.expiry ?? null,
+        note,
+        at,
+      })),
+    );
+    // `at` addresses the order for an undo: it is the one value every line of it shares.
+    return NextResponse.json({ ok: true, count: items.length, at: at.toISOString() });
   } catch (err: unknown) {
     if (err && typeof err === "object" && "code" in err && err.code === "23514") {
       return NextResponse.json({ error: "Stock changed — one line is now more than is on hand" }, { status: 400 });

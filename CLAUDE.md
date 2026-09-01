@@ -134,6 +134,17 @@ Receiving is lot-aware, so mixed-expiry stock keeps separate countdowns:
 
 `stock` is still updated atomically (`stock = stock + :qty`). The 2 legacy note-encoded multi-lot items were split into per-lot rows by `scripts/split_lots.ts` (idempotent).
 
+### 5. Undoing a pickup
+
+The one HAA error nothing else catches is a plausible wrong number — under the on-hand count, under `MAX_QTY`, indistinguishable from a real order. Two layers answer it:
+
+* **Before the write.** A line that takes all or nearly all of what is on hand (`clearsShelf` in `lib/limits.ts`) turns "Record pickup" into a two-tap confirmation listing those lines. Ordinary orders are never queried — a warning that fires on normal work is one staff tap past.
+* **After the write.** `POST /api/haa-pickup/undo` takes the `at` timestamp every line of an order shares and hands the whole order back. **Open without a passcode for `UNDO_WINDOW_MS` (30 min)** — the person who mistyped is not the person with the passcode — and admin-gated after that, offered on the confirmation toast and on every order in the history feed.
+
+Nothing is edited or deleted. An undo is new `pickup` rows with **positive** quantities, carrying the original order's note (so the export still credits the correction to the right unit and picker) and pointing at the order they cancel via `reverses_at`. The ledger stays append-only and nets to zero: `txcsv.ts` flips the *sign* rather than taking the magnitude, so an undone pickup subtracts itself back off the issued column instead of reading as a second withdrawal.
+
+Every pickup line stamps the lot's expiry into `events.expiry_set`, because a pickup that empties a lot trips the out-of-stock trigger and the date is otherwise gone for good — an undo puts it back from there. `needs_expiry` is **not** restored (the trigger clears it too, and nothing records it); an admin re-flags.
+
 ---
 
 ## THE CORE DATA CONTRACT
@@ -170,13 +181,18 @@ CREATE INDEX products_expiry_idx   ON products (expiry);
 CREATE TABLE events (
   id          BIGSERIAL PRIMARY KEY,
   product_id  BIGINT REFERENCES products(id) ON DELETE SET NULL,
-  kind        TEXT NOT NULL,          -- 'create' | 'receive' | 'adjust' | 'set_expiry' | 'delete'
-  qty_delta   INTEGER,               -- for receive / adjust (negative when stock removed)
-  expiry_set  DATE,                  -- for set_expiry
+  kind        TEXT NOT NULL,          -- 'create' | 'receive' | 'pickup' | 'adjust' | 'set_expiry' | 'delete'
+  qty_delta   INTEGER,               -- for receive / pickup / adjust (negative when stock removed)
+  expiry_set  DATE,                  -- for set_expiry; also the lot's date, stamped on every pickup line
   note        TEXT,                  -- free-text reason, e.g. why stock was removed
   actor       TEXT,                  -- who did it (once auth lands)
-  at          TIMESTAMPTZ NOT NULL DEFAULT now()
+  at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reverses_at TIMESTAMPTZ            -- the HAA order this line undoes; null on everything else
 );
+
+-- One undo per product per order: the backstop against a double-tapped Undo paying it back twice.
+CREATE UNIQUE INDEX events_one_reversal_per_line
+  ON events (reverses_at, product_id) WHERE reverses_at IS NOT NULL;
 ```
 
 ### Derived item shape (computed on read, never stored)
@@ -245,6 +261,8 @@ inventory-date/
     │   │   ├── products/route.ts             # GET list (filter/search), POST create
     │   │   ├── products/[id]/route.ts        # PATCH edit / set-expiry, DELETE
     │   │   ├── receive/route.ts              # POST receive stock (atomic increment)
+    │   │   ├── haa-pickup/route.ts           # POST open (passcode-free) HAA pickup
+    │   │   ├── haa-pickup/undo/route.ts      # POST undo a whole order; open for 30 min, then admin
     │   │   └── reminders/route.ts            # GET roll-up preview
     │   └── api/cron/expiry-sweep/route.ts    # Vercel Cron target -> dispatch
     │
@@ -321,7 +339,7 @@ inventory-date/
 * `POST /api/remove` — remove/use stock
 * `DELETE /api/products/[id]` — delete
 
-**`POST /api/haa-pickup` is the one open write.** Floor staff record their own pickups without a passcode; that is the whole point of the cart.
+**`POST /api/haa-pickup` is the one open write**, along with `POST /api/haa-pickup/undo` for the first 30 minutes after an order. Floor staff record — and take back — their own pickups without a passcode; that is the whole point of the cart. An undo older than the window falls back under the gate with everything else.
 
 Client-side the passcode is asked for *before* the modal opens (`guard()` in `InventoryApp`, which stashes the blocked action on the admin modal and opens it after unlocking), so no form carries its own inline passcode field any more. Successful admin actions record `actor: "admin"` on the `events` row and `updated_by: "admin"` on the product (there's no per-user identity to record beyond that).
 
