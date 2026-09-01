@@ -308,6 +308,12 @@
   /* An undone order is still a real ledger entry, so it is muted rather than struck through --
      the correction beside it is the story, not a line to skim past. */
   .histfeed .order.undone summary .histwhat{color:var(--muted)}
+  /* The shelf-clearing check, in the cart footer above the record button. Amber, not red: it is
+     a question about a legitimate order, not a rejection of it. */
+  .checkme{background:var(--soon-soft);border:1px solid var(--soon);border-radius:9px;
+    padding:9px 11px;margin-bottom:9px;font-size:12px;line-height:1.5;color:var(--ink)}
+  .checkme ul{margin:5px 0 0;padding-left:17px}
+  .checkme li{margin-top:2px}
 
   /* Touch devices: the cart steppers are the HAA's main control and were 26px, well under the
      ~44px a thumb needs. Only widened where the pointer is actually coarse, so the desktop

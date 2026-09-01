@@ -24,3 +24,23 @@ export function checkQty(n: number, what = "Quantity"): string | null {
   }
   return null;
 }
+
+/**
+ * A pickup line big enough to be worth querying before it lands.
+ *
+ * `MAX_QTY` catches the keypress that lands in the millions; this catches the one that stays
+ * plausible. There is no way to tell 50-from-5 apart from a real 50 when 200 are on the shelf,
+ * and pretending to would just teach staff to tap past the warning. What *is* recognisable is a
+ * line that clears the shelf -- both the likeliest place for an extra digit and the one where a
+ * wrong number does the most damage, because the room reads as empty and the out-of-stock
+ * trigger takes the lot's expiry date with it.
+ *
+ * `qty` and `max` are in stocked units (boxes); the magnitude test is in the units on screen,
+ * so PPE is judged on the pieces staff actually typed.
+ */
+export const CLEARS_SHELF = 0.8;
+const WORTH_QUERYING = 10; // one or two of anything is never a mistyped digit
+
+export function clearsShelf(qty: number, max: number, unitsPerBox: number | null): boolean {
+  return qty * (unitsPerBox ?? 1) >= WORTH_QUERYING && qty >= max * CLEARS_SHELF;
+}

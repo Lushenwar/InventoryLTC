@@ -6,6 +6,7 @@ import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from 
 import { weekEnd, weekOf, weekStart, weeksInYear } from "@/lib/weeks";
 import { expiryFromMfg, shelfLifeYears } from "@/lib/shelflife";
 import { packSize, receiveBoxes, snapQty } from "@/lib/pack";
+import { clearsShelf } from "@/lib/limits";
 import { withinUndoWindow } from "@/lib/undo";
 import type { Counts, Product } from "@/lib/types";
 import ReminderPanel from "./ReminderPanel";
@@ -1426,6 +1427,15 @@ function PickupCart({
   const [unit, setUnit] = useState("");
   const [picker, setPicker] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  // Lines that would clear the shelf. Recording is a two-tap action when any are present:
+  // once the order is filed the count is wrong until somebody undoes it, and a question asked
+  // before the write costs a second where the same question afterwards costs a stock count.
+  const heavy = cart.filter((l) => clearsShelf(l.qty, l.max, l.unitsPerBox));
+  // Editing anything invalidates the confirmation -- otherwise a tap meant for the old lines
+  // records a set of numbers nobody was asked about.
+  useEffect(() => setConfirming(false), [cart]);
   // Pieces, matching what the lines and the export now report -- a box count here read as
   // "3 units" next to a line saying "900 pcs" was just two numbers for the same thing.
   const totalPieces = cart.reduce((s, l) => s + l.qty * (l.unitsPerBox ?? 1), 0);
@@ -1433,6 +1443,8 @@ function PickupCart({
 
   async function record() {
     if (busy || !ready) return;
+    if (heavy.length && !confirming) return setConfirming(true);
+    setConfirming(false);
     setBusy(true);
     const ok = await onSubmit(unit.trim(), picker.trim());
     if (ok) { setUnit(""); setPicker(""); }
@@ -1477,9 +1489,28 @@ function PickupCart({
           <label>Picked up by</label>
           <input value={picker} onChange={(e) => setPicker(e.target.value)} placeholder="e.g. name" />
         </div>
+        {confirming && (
+          <div className="checkme">
+            <b>Check these before recording.</b> This order takes all or nearly all of what is on
+            the shelf:
+            <ul>
+              {heavy.map((l) => (
+                <li key={l.id}>
+                  {l.name} — {(l.qty * (l.unitsPerBox ?? 1)).toLocaleString()} of{" "}
+                  {(l.max * (l.unitsPerBox ?? 1)).toLocaleString()} {l.unitsPerBox ? "pcs" : l.uom}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} disabled={busy || !ready} onClick={record}>
-          {busy ? "Recording…" : "Record pickup"}
+          {busy ? "Recording…" : confirming ? "Yes, record it" : "Record pickup"}
         </button>
+        {confirming && (
+          <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 6 }} onClick={() => setConfirming(false)}>
+            Go back and check
+          </button>
+        )}
       </div>
     </aside>
   );
