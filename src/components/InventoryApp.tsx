@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from "@/lib/expiry";
-import { isoWeekEnd, isoWeekOf, isoWeekStart, weeksInIsoYear } from "@/lib/weeks";
+import { weekEnd, weekOf, weekStart, weeksInYear } from "@/lib/weeks";
 import { expiryFromMfg, shelfLifeYears } from "@/lib/shelflife";
 import { packSize, receiveBoxes, snapQty } from "@/lib/pack";
 import type { Counts, Product } from "@/lib/types";
@@ -1015,24 +1015,24 @@ const shortDay = (s: string) => new Date(s + "T00:00:00").toLocaleDateString(und
 // How an item reads in the export picker: the name, with its catalog code alongside.
 const itemLabel = (it: { name: string; code: string | null }) => (it.code ? `${it.name} · ${it.code}` : it.name);
 
-// Transaction export: pick a span of ISO weeks, get receives + HAA pickups as a CSV Excel
+// Transaction export: pick a span of weeks, get receives + HAA pickups as a CSV Excel
 // opens directly. A plain download link, so the browser does the saving and there's no blob
 // juggling here.
 function ExportRange({ items }: { items: { name: string; code: string | null }[] }) {
-  const now = useMemo(() => isoWeekOf(facilityToday()), []);
+  const now = useMemo(() => weekOf(facilityToday()), []);
   const [year, setYear] = useState(now.year);
   const [fromWeek, setFromWeek] = useState(now.week);
   const [toWeek, setToWeek] = useState(now.week);
   const [kind, setKind] = useState(""); // "" = both directions
   const [item, setItem] = useState(""); // "" = every item
 
-  const weekCount = weeksInIsoYear(year); // 52 or 53 -- 2026 is a 53-week year
+  const weekCount = weeksInYear(year); // 52 or 53 -- W1 is the week of the year's first Monday
   // Switching to a shorter year can strand a week number past its end, so clamp on read
   // rather than resetting the pickers under the user.
-  const start = isoWeekStart(year, Math.min(fromWeek, weekCount));
-  const end = isoWeekEnd(year, Math.min(toWeek, weekCount));
+  const start = weekStart(year, Math.min(fromWeek, weekCount));
+  const end = weekEnd(year, Math.min(toWeek, weekCount));
   const weeks = Array.from({ length: weekCount }, (_, i) => i + 1);
-  const weekLabel = (w: number) => `W${w} · ${shortDay(isoWeekStart(year, w))} – ${shortDay(isoWeekEnd(year, w))}`;
+  const weekLabel = (w: number) => `W${w} · ${shortDay(weekStart(year, w))} – ${shortDay(weekEnd(year, w))}`;
 
   // The picker's own "name · code" label, a bare name, or a bare code -- case ignored, the box
   // takes whichever the user has. An exact hit is one item's ledger; anything else is a family
