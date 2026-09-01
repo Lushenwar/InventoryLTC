@@ -21,7 +21,7 @@ Everything that changes a count or a product record needs the shared admin passc
 
 ## Transaction export
 
-**History → Export** produces a CSV (opens straight in Excel) of receives and HAA pickups over a span of ISO weeks, optionally narrowed to one direction and one item or group.
+**History → Export** produces a CSV (opens straight in Excel) of receives and HAA pickups over a span of weeks (W1 is the week of the year’s first Monday — 2026 W1 is Jan 5–11), optionally narrowed to one direction and one item or group.
 
 - **PPE quantities are in pieces**, not boxes — what was physically received and picked up, matching the legacy sheet.
 - When you filter to an item, the sheet closes on the **stock actually on hand today** and works the opening balance back from it, so it reads `opening + received − issued = on hand`. A week that received 250 masks and issued 250 shows `9,000 → 9,000`, not `0` — which is what makes a miscount visible instead of plausible.

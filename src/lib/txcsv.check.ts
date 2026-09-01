@@ -4,7 +4,7 @@
 // bottom row reads "Total QtyRecd: 100,000 / Total QtyIssued: 79,500". If the export ever
 // stops reproducing those two numbers from these transactions, this fails.
 import assert from "node:assert";
-import { isoWeekEnd, isoWeekStart } from "./weeks";
+import { weekEnd, weekStart } from "./weeks";
 import { TX_HEADER, pickupParts, sheetPieces, sheetUnits, txCsv, txCsvGrouped, type TxRow } from "./txcsv";
 
 const ITEM = "Glove Nitrile blue Lrg";
@@ -101,9 +101,9 @@ assert.deepStrictEqual(TX_HEADER.slice(0, 7), [
   assert.deepStrictEqual(jun25.slice(0, 7), ["2026-06-25", "2030-10-30", FS, "20000", "", "", ""]);
 }
 
-// --- Week slices: the export is picked by ISO week, so check several. ---
+// --- Week slices: the export is picked by week, so check several. ---
 const inWeeks = (year: number, from: number, to: number) =>
-  LEDGER.filter((r) => r.day >= isoWeekStart(year, from) && r.day <= isoWeekEnd(year, to));
+  LEDGER.filter((r) => r.day >= weekStart(year, from) && r.day <= weekEnd(year, to));
 
 function footer(rows: TxRow[]): { recd: string; issued: string; onHand: string; count: number } {
   const out = lines(txCsv(rows));
@@ -115,23 +115,23 @@ function footer(rows: TxRow[]): { recd: string; issued: string; onHand: string; 
   };
 }
 
-// W28 (Jul 6-12): the single pickup.
-assert.deepStrictEqual(footer(inWeeks(2026, 28, 28)), { recd: "0", issued: "5250", onHand: "-5250", count: 1 });
-// W27 (Jun 29-Jul 5): the Staff Lounge pickup only -- proves the Jul 6 row is excluded.
-assert.deepStrictEqual(footer(inWeeks(2026, 27, 27)), { recd: "0", issued: "14250", onHand: "-14250", count: 1 });
-// W26 (Jun 22-28): one in, one out.
-assert.deepStrictEqual(footer(inWeeks(2026, 26, 26)), { recd: "20000", issued: "8000", onHand: "12000", count: 2 });
-// W22 (May 25-31): a week that nets negative.
-assert.deepStrictEqual(footer(inWeeks(2026, 22, 22)), { recd: "20000", issued: "20250", onHand: "-250", count: 2 });
-// W18 (Apr 27-May 3): the both-ways day, which must balance to zero.
-assert.deepStrictEqual(footer(inWeeks(2026, 18, 18)), { recd: "10000", issued: "10000", onHand: "0", count: 2 });
+// W27 (Jul 6-12): the single pickup.
+assert.deepStrictEqual(footer(inWeeks(2026, 27, 27)), { recd: "0", issued: "5250", onHand: "-5250", count: 1 });
+// W26 (Jun 29-Jul 5): the Staff Lounge pickup only -- proves the Jul 6 row is excluded.
+assert.deepStrictEqual(footer(inWeeks(2026, 26, 26)), { recd: "0", issued: "14250", onHand: "-14250", count: 1 });
+// W25 (Jun 22-28): one in, one out.
+assert.deepStrictEqual(footer(inWeeks(2026, 25, 25)), { recd: "20000", issued: "8000", onHand: "12000", count: 2 });
+// W21 (May 25-31): a week that nets negative.
+assert.deepStrictEqual(footer(inWeeks(2026, 21, 21)), { recd: "20000", issued: "20250", onHand: "-250", count: 2 });
+// W17 (Apr 27-May 3): the both-ways day, which must balance to zero.
+assert.deepStrictEqual(footer(inWeeks(2026, 17, 17)), { recd: "10000", issued: "10000", onHand: "0", count: 2 });
 // A quiet week with nothing in it still exports a valid, zeroed sheet -- with one line saying so
 // rather than an empty body (see the Apple Juice case below).
-assert.deepStrictEqual(footer(inWeeks(2026, 24, 24)), { recd: "0", issued: "0", onHand: "0", count: 1 });
-// A multi-week span (W22-W28) is the sum of its parts.
-assert.deepStrictEqual(footer(inWeeks(2026, 22, 28)), { recd: "40000", issued: "63000", onHand: "-23000", count: 7 });
+assert.deepStrictEqual(footer(inWeeks(2026, 23, 23)), { recd: "0", issued: "0", onHand: "0", count: 1 });
+// A multi-week span (W21-W27) is the sum of its parts.
+assert.deepStrictEqual(footer(inWeeks(2026, 21, 27)), { recd: "40000", issued: "63000", onHand: "-23000", count: 7 });
 // The full span reproduces the sheet's bottom row.
-assert.deepStrictEqual(footer(inWeeks(2026, 10, 28)), { recd: "100000", issued: "79500", onHand: "20500", count: 17 });
+assert.deepStrictEqual(footer(inWeeks(2026, 9, 27)), { recd: "100000", issued: "79500", onHand: "20500", count: 17 });
 
 // --- Direction filters: "received only" / "issued only" (what the HAA pickups are). ---
 {
