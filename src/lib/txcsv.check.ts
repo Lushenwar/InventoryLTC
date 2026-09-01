@@ -357,4 +357,34 @@ assert.deepStrictEqual(cols(lines(txCsvGrouped(LEDGER)).at(-2)!).slice(3, 5), ["
   assert.strictEqual(cols(p[1])[9], "", "the pickup note is not repeated");
 }
 
-console.log("ok: transaction export columns, week slices, direction filters, ledger totals, grouped subtotals, and removals/creates balancing");
+// An undone pickup cancels the order it undoes: the two lines net to zero issued, the opening
+// balance comes back to the closing one, and the correction says so in the notes column. Getting
+// this wrong counted the undo as a second withdrawal, doubling the very error it was fixing.
+{
+  const order = { day: "2026-07-06", kind: "pickup", expiry: null, note: "HAA pickup — 5W · Sany",
+    name: ITEM, code: CODE, location: FS, unitsPerBox: null } as const;
+  const u = lines(txCsv(
+    [{ ...order, qty: -50 }, { ...order, day: "2026-07-07", qty: 50 }],
+    { units: 200, pieces: 200 },
+  ));
+  assert.strictEqual(cols(u[1])[4], "50", "the wrong order is still on the sheet");
+  assert.strictEqual(cols(u[2])[4], "-50", "the undo subtracts itself back off");
+  assert.strictEqual(cols(u[2])[9], "Pickup undone", "and says why");
+  assert.deepStrictEqual(cols(u[2]).slice(5, 7), ["Sany", "5W"], "credited to the same unit and picker");
+  const [uOpen, uTot, uClose] = [cols(u.at(-3)!), cols(u.at(-2)!), cols(u.at(-1)!)];
+  assert.strictEqual(uTot[4], "0", "nothing was issued on balance");
+  assert.strictEqual(uOpen[3], uClose[3], "so the stock never moved");
+  assert.strictEqual(uClose[3], "200");
+}
+
+// Undoing a PPE order nets in pieces too, not just in boxes.
+{
+  const order = { day: "2026-07-06", kind: "pickup", expiry: null, note: "HAA pickup — 3E · Ray",
+    name: "Mask", code: null, location: FS, unitsPerBox: 300 } as const;
+  const u = lines(txCsv([{ ...order, qty: -3 }, { ...order, day: "2026-07-07", qty: 3 }]));
+  assert.deepStrictEqual([cols(u[1])[4], cols(u[2])[4]], ["900", "-900"]);
+  assert.deepStrictEqual([cols(u[1])[10], cols(u[2])[10]], ["900", "-900"], "pieces follow the sign");
+  assert.strictEqual(cols(u.at(-2)!)[4], "0", "and the subtotal nets out");
+}
+
+console.log("ok: transaction export columns, week slices, direction filters, ledger totals, grouped subtotals, and removals/creates balancing, and undone pickups netting out");
