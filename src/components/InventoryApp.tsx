@@ -6,6 +6,7 @@ import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from 
 import { weekEnd, weekOf, weekStart, weeksInYear } from "@/lib/weeks";
 import { expiryFromMfg, shelfLifeYears } from "@/lib/shelflife";
 import { packSize, receiveBoxes, snapQty } from "@/lib/pack";
+import { withinUndoWindow } from "@/lib/undo";
 import type { Counts, Product } from "@/lib/types";
 import ReminderPanel from "./ReminderPanel";
 
@@ -25,6 +26,9 @@ type ModalState =
   | { type: "receive"; mode: "existing" | "new"; presetId?: number }
   | { type: "remove"; product: Product }
   | { type: "history"; product: Product }
+  // Undoing an order off the history feed, rather than off the toast that just confirmed it.
+  // Worth a confirmation there: by then it is someone else's order and possibly last week's.
+  | { type: "undo"; at: string; items: number; units: number }
   // `then` is the action that was blocked: unlocking opens it, so the passcode is asked for
   // once, up front, instead of once per modal after the form has already been filled in.
   | { type: "admin"; then?: ModalState };
@@ -298,15 +302,24 @@ export default function InventoryApp({
   // Hands a whole order back. No passcode inside the undo window, which is the point -- the
   // person who mistyped the number is the person standing there, and they are not the person
   // with the passcode. Past the window the server asks for one and `guard` supplies it.
-  async function undoPickup(at: string, asAdmin = false) {
+  async function undoPickup(at: string) {
     const r = await send("/api/haa-pickup/undo", {
       method: "POST",
-      headers: asAdmin ? adminHeaders({ "Content-Type": "application/json" }) : { "Content-Type": "application/json" },
+      headers: adminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ at }),
     });
     if (!r.ok) return showToast(r.error);
+    setModal({ type: "closed" });
     await refreshAfterMutation();
     showToast(`Pickup undone · ${r.body.count} item(s) put back`);
+  }
+
+  // From the history feed the order is no longer the one you just filed, so it gets a
+  // confirmation -- and, once it is older than the undo window, the passcode every other
+  // count-changing write needs. Asked for up front, the same way every admin action does it.
+  function askUndo(at: string, items: number, units: number) {
+    const next: ModalState = { type: "undo", at, items, units };
+    setModal(withinUndoWindow(at) || adminPasscode ? next : { type: "admin", then: next });
   }
 
   async function submitEdit(id: number, payload: Record<string, unknown>) {
@@ -391,7 +404,7 @@ export default function InventoryApp({
 
       <main className={pickupMode ? "shopping" : ""}>
         {view === "history" ? (
-          <HistoryFeed items={exportItems} />
+          <HistoryFeed items={exportItems} onUndo={askUndo} />
         ) : (
         <>
         <div className="stats">
@@ -668,6 +681,15 @@ export default function InventoryApp({
       {modal.type === "history" && (
         <HistoryModal product={modal.product} onClose={() => setModal({ type: "closed" })} />
       )}
+      {modal.type === "undo" && (
+        <UndoPickupModal
+          items={modal.items}
+          units={modal.units}
+          at={modal.at}
+          onClose={() => setModal({ type: "closed" })}
+          onConfirm={() => undoPickup(modal.at)}
+        />
+      )}
       {modal.type === "admin" && (
         <AdminUnlockModal
           next={modal.then}
@@ -893,6 +915,50 @@ function DeleteModal({
   );
 }
 
+// Confirming an undo raised off the history feed. The toast's Undo skips this -- there the
+// order is seconds old and the mistake is fresh -- but here it may be someone else's order from
+// last week, and putting stock back on a shelf that no longer has it is its own wrong number.
+function UndoPickupModal({
+  items,
+  units,
+  at,
+  onClose,
+  onConfirm,
+}: {
+  items: number;
+  units: number;
+  at: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Overlay onClose={onClose}>
+      <div className="mh">
+        <div className="ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 7v6h6" /><path d="M21 17a9 9 0 00-15-6.7L3 13" />
+          </svg>
+        </div>
+        <div><h2>Undo this pickup</h2><p>{fmtWhen(at)}</p></div>
+        <button className="x" onClick={onClose}>×</button>
+      </div>
+      <div className="mbody">
+        <p style={{ margin: "4px 0 8px" }}>
+          Put <b>{units.toLocaleString()}</b> unit(s) across <b>{items}</b> item(s) back on the shelf?
+        </p>
+        <div className="hint">
+          Check the stock is physically back before undoing. The order stays in the history with a
+          matching correction beside it, so the sheet balances either way.
+        </div>
+      </div>
+      <div className="mfoot">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" onClick={onConfirm}>Put it back</button>
+      </div>
+    </Overlay>
+  );
+}
+
 function RemoveModal({
   product,
   onClose,
@@ -944,7 +1010,7 @@ function RemoveModal({
   );
 }
 
-type EventRow = { id: number; kind: string; qtyDelta: number | null; expirySet: string | null; note: string | null; actor: string | null; at: string };
+type EventRow = { id: number; kind: string; qtyDelta: number | null; expirySet: string | null; note: string | null; actor: string | null; at: string; reversesAt: string | null };
 
 function describeEvent(e: EventRow, uom: string): string {
   switch (e.kind) {
@@ -953,7 +1019,10 @@ function describeEvent(e: EventRow, uom: string): string {
     case "create": return `Added to the list${e.qtyDelta ? ` · ${e.qtyDelta} ${uom}` : ""}`;
     case "receive": return `Received ${e.qtyDelta ?? 0} ${uom}${e.expirySet ? ` · expires ${fmtDate(e.expirySet)}` : ""}`;
     case "adjust": return (e.qtyDelta ?? 0) < 0 ? `Removed ${Math.abs(e.qtyDelta ?? 0)} ${uom}` : `Added back ${e.qtyDelta ?? 0} ${uom}`;
-    case "pickup": return `Picked up ${Math.abs(e.qtyDelta ?? 0)} ${uom}`;
+    // Pickups are stored negative; the positive ones are the undo of an order.
+    case "pickup": return (e.qtyDelta ?? 0) > 0
+      ? `Pickup undone · ${e.qtyDelta} ${uom} back`
+      : `Picked up ${Math.abs(e.qtyDelta ?? 0)} ${uom}`;
     case "set_expiry": return `Expiry date set to ${e.expirySet ? fmtDate(e.expirySet) : "—"}`;
     case "delete": return "Deleted";
     default: return e.kind;
@@ -1013,11 +1082,15 @@ function HistoryModal({ product, onClose }: { product: Product; onClose: () => v
 type FeedEvent = EventRow & { name: string | null; code: string | null; location: string | null; uom: string | null };
 type FeedGroup =
   | { type: "single"; e: FeedEvent }
-  | { type: "pickup"; at: string; note: string | null; lines: FeedEvent[] };
+  | { type: "pickup"; at: string; note: string | null; lines: FeedEvent[]; undoOf: string | null; undone: boolean };
 
 // Consecutive pickup events sharing a timestamp are one HAA order — regroup them so the
 // order shows as a single expandable row instead of one row per line.
 function groupFeed(evs: FeedEvent[]): FeedGroup[] {
+  // Which orders already have an undo on this page. ponytail: only this page -- an order whose
+  // undo fell on the other side of a page break still offers the button, and the server answers
+  // "already undone". A wrong button beats fetching the whole ledger to grey one out.
+  const undone = new Set(evs.map((e) => e.reversesAt).filter(Boolean) as string[]);
   const out: FeedGroup[] = [];
   let i = 0;
   while (i < evs.length) {
@@ -1025,7 +1098,7 @@ function groupFeed(evs: FeedEvent[]): FeedGroup[] {
     if (e.kind === "pickup") {
       const lines: FeedEvent[] = [];
       while (i < evs.length && evs[i].kind === "pickup" && evs[i].at === e.at) lines.push(evs[i++]);
-      out.push({ type: "pickup", at: e.at, note: e.note, lines });
+      out.push({ type: "pickup", at: e.at, note: e.note, lines, undoOf: e.reversesAt, undone: undone.has(e.at) });
     } else {
       out.push({ type: "single", e });
       i++;
@@ -1168,7 +1241,13 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
   );
 }
 
-function HistoryFeed({ items }: { items: { name: string; code: string | null }[] }) {
+function HistoryFeed({
+  items,
+  onUndo,
+}: {
+  items: { name: string; code: string | null }[];
+  onUndo: (at: string, itemCount: number, units: number) => void;
+}) {
   const [events, setEvents] = useState<FeedEvent[] | null>(null);
   const [error, setError] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -1216,22 +1295,41 @@ function HistoryFeed({ items }: { items: { name: string; code: string | null }[]
         <ul className="histfeed">
           {groups.map((g, idx) =>
             g.type === "pickup" ? (
-              <li key={`p${idx}`} className="order">
-                <details>
-                  <summary>
-                    <span className="histwhat">
-                      HAA pickup · {g.lines.length} item(s) · {g.lines.reduce((s, l) => s + Math.abs(l.qtyDelta ?? 0), 0)} units
-                      {g.note && g.note !== "HAA pickup" ? ` · ${g.note.replace("HAA pickup — ", "")}` : ""}
-                    </span>
-                    <span className="histwhen">{fmtWhen(g.at)}</span>
-                  </summary>
-                  <ul className="orderlines">
-                    {g.lines.map((l) => (
-                      <li key={l.id}>{l.name ?? "(removed item)"} — {Math.abs(l.qtyDelta ?? 0)} {l.uom ?? "EA"}{l.location ? ` · ${l.location}` : ""}</li>
-                    ))}
-                  </ul>
-                </details>
-              </li>
+              (() => {
+                const units = g.lines.reduce((s, l) => s + Math.abs(l.qtyDelta ?? 0), 0);
+                // The unit and picker, off the order's note. An undo carries the original's note,
+                // so a correction stays attached to the order it corrects.
+                const who = g.note && g.note !== "HAA pickup" ? ` · ${g.note.replace("HAA pickup — ", "")}` : "";
+                return (
+                  <li key={`p${idx}`} className={`order${g.undoOf ? " undone" : ""}`}>
+                    <details>
+                      <summary>
+                        <span className="histwhat">
+                          {g.undoOf ? "Pickup undone" : "HAA pickup"} · {g.lines.length} item(s) · {units} units{who}
+                        </span>
+                        <span className="histwhen">{fmtWhen(g.at)}</span>
+                      </summary>
+                      <ul className="orderlines">
+                        {g.lines.map((l) => (
+                          <li key={l.id}>{l.name ?? "(removed item)"} — {Math.abs(l.qtyDelta ?? 0)} {l.uom ?? "EA"}{l.location ? ` · ${l.location}` : ""}</li>
+                        ))}
+                        {g.undoOf && <li className="hint">Puts back the pickup of {fmtWhen(g.undoOf)}.</li>}
+                      </ul>
+                      {/* Inside the expander, not on the summary row: an undo should take opening
+                          the order and reading it, not one stray tap on a phone. */}
+                      {!g.undoOf && (
+                        g.undone ? (
+                          <div className="hint" style={{ padding: "0 2px 4px" }}>Already undone.</div>
+                        ) : (
+                          <button className="btn" style={{ marginTop: 4 }} onClick={() => onUndo(g.at, g.lines.length, units)}>
+                            Undo this pickup
+                          </button>
+                        )
+                      )}
+                    </details>
+                  </li>
+                );
+              })()
             ) : g.e.kind === "delete" ? (
               <li key={g.e.id} className="order">
                 <details>

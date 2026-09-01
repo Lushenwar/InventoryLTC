@@ -305,6 +305,9 @@
     text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px 2px;margin:-6px 0 -6px 6px;
     min-height:32px}
   .toast .undo:hover{color:#7BE8B0}
+  /* An undone order is still a real ledger entry, so it is muted rather than struck through --
+     the correction beside it is the story, not a line to skim past. */
+  .histfeed .order.undone summary .histwhat{color:var(--muted)}
 
   /* Touch devices: the cart steppers are the HAA's main control and were 26px, well under the
      ~44px a thumb needs. Only widened where the pointer is actually coarse, so the desktop
