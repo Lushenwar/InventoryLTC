@@ -299,6 +299,12 @@
     box-shadow:var(--shadow-lg);opacity:0;transition:.22s;z-index:90;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .toast svg{width:16px;height:16px;color:#7BE8B0}
+  /* The undo lives inside the toast, so it has to read as the action and not as decoration --
+     underlined, full-contrast, and a 44px-tall hit area on the phones this is used from. */
+  .toast .undo{background:none;border:none;color:#fff;font:inherit;font-weight:700;
+    text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:6px 2px;margin:-6px 0 -6px 6px;
+    min-height:32px}
+  .toast .undo:hover{color:#7BE8B0}
 
   /* Touch devices: the cart steppers are the HAA's main control and were 26px, well under the
      ~44px a thumb needs. Only widened where the pointer is actually coarse, so the desktop
@@ -308,6 +314,7 @@
     .qstep input{height:40px}
     .iconbtn{width:40px;height:40px}
     .cartlist .cx{font-size:24px;padding:0 8px}
+    .toast .undo{padding:12px 8px;margin:-12px 0 -12px 4px}
   }
 
   /* CLAUDE.md requires this and it was missing: honour the OS "reduce motion" setting. */

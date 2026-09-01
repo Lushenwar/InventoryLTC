@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
         at,
       })),
     );
-    return NextResponse.json({ ok: true, count: items.length });
+    // `at` addresses the order for an undo: it is the one value every line of it shares.
+    return NextResponse.json({ ok: true, count: items.length, at: at.toISOString() });
   } catch (err: unknown) {
     if (err && typeof err === "object" && "code" in err && err.code === "23514") {
       return NextResponse.json({ error: "Stock changed — one line is now more than is on hand" }, { status: 400 });

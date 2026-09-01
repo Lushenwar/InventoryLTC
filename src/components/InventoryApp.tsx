@@ -38,6 +38,9 @@ const ADMIN_SESSION_KEY = "steward_admin_passcode";
 // evict this tab while they check a message. Survives a reload; cleared once the order is filed.
 const CART_KEY = "inventory_date_pickup_cart";
 
+// `undoAt` is the timestamp of the HAA order the toast is offering to take back.
+type Toast = { msg: string; undoAt?: string };
+
 type Sent = { ok: true; body: any } | { ok: false; error: string };
 
 /**
@@ -85,7 +88,7 @@ export default function InventoryApp({
   const [isPending, startTransition] = useTransition();
   const [modal, setModal] = useState<ModalState>({ type: "closed" });
   const [view, setView] = useState<"inventory" | "history">("inventory");
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
   const [searchValue, setSearchValue] = useState(filters.q);
   const [adminPasscode, setAdminPasscodeState] = useState<string | null>(null);
   const [pickupMode, setPickupMode] = useState(false);
@@ -185,9 +188,15 @@ export default function InventoryApp({
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast((cur) => (cur === msg ? null : cur)), 2200);
+  // `undoAt` turns the toast into the one place a wrong pickup can be taken back without
+  // hunting for it. Identity comparison, not message text, so two identical toasts in a row
+  // don't cancel each other's timer.
+  function showToast(msg: string, undoAt?: string) {
+    const t: Toast = { msg, undoAt };
+    setToast(t);
+    // An undo has to survive reading the line and looking back at the shelf; a plain
+    // confirmation is done being useful almost immediately.
+    setTimeout(() => setToast((cur) => (cur === t ? null : cur)), undoAt ? 12000 : 2200);
   }
 
   function updateParams(patch: Record<string, string>) {
@@ -282,8 +291,22 @@ export default function InventoryApp({
     setCart([]);
     setPickupMode(false);
     await refreshAfterMutation();
-    showToast(`Recorded HAA pickup · ${r.body.count} item(s)`);
+    showToast(`Recorded HAA pickup · ${r.body.count} item(s)`, r.body.at);
     return true;
+  }
+
+  // Hands a whole order back. No passcode inside the undo window, which is the point -- the
+  // person who mistyped the number is the person standing there, and they are not the person
+  // with the passcode. Past the window the server asks for one and `guard` supplies it.
+  async function undoPickup(at: string, asAdmin = false) {
+    const r = await send("/api/haa-pickup/undo", {
+      method: "POST",
+      headers: asAdmin ? adminHeaders({ "Content-Type": "application/json" }) : { "Content-Type": "application/json" },
+      body: JSON.stringify({ at }),
+    });
+    if (!r.ok) return showToast(r.error);
+    await refreshAfterMutation();
+    showToast(`Pickup undone · ${r.body.count} item(s) put back`);
   }
 
   async function submitEdit(id: number, payload: Record<string, unknown>) {
@@ -664,7 +687,12 @@ export default function InventoryApp({
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6L9 17l-5-5" />
             </svg>
-            {toast}
+            {toast.msg}
+            {toast.undoAt && (
+              <button className="undo" onClick={() => { const at = toast.undoAt!; setToast(null); undoPickup(at); }}>
+                Undo
+              </button>
+            )}
           </>
         )}
       </div>
