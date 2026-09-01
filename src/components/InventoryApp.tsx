@@ -98,6 +98,10 @@ export default function InventoryApp({
   const [adminPasscode, setAdminPasscodeState] = useState<string | null>(null);
   const [pickupMode, setPickupMode] = useState(false);
   const [cart, setCart] = useState<CartLine[]>([]);
+  // Bumped when a write lands that the activity feed shows. `router.refresh()` re-renders the
+  // server components, but the feed fetches its own rows -- without this, undoing an order from
+  // the feed leaves the order sitting there still offering to be undone.
+  const [feedKey, setFeedKey] = useState(0);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cartQty = useMemo(() => new Map(cart.map((l) => [l.id, l.qty])), [cart]);
@@ -311,6 +315,7 @@ export default function InventoryApp({
     });
     if (!r.ok) return showToast(r.error);
     setModal({ type: "closed" });
+    setFeedKey((k) => k + 1);
     await refreshAfterMutation();
     showToast(`Pickup undone · ${r.body.count} item(s) put back`);
   }
@@ -405,7 +410,7 @@ export default function InventoryApp({
 
       <main className={pickupMode ? "shopping" : ""}>
         {view === "history" ? (
-          <HistoryFeed items={exportItems} onUndo={askUndo} />
+          <HistoryFeed items={exportItems} onUndo={askUndo} reloadKey={feedKey} />
         ) : (
         <>
         <div className="stats">
@@ -1245,9 +1250,11 @@ function ExportRange({ items }: { items: { name: string; code: string | null }[]
 function HistoryFeed({
   items,
   onUndo,
+  reloadKey,
 }: {
   items: { name: string; code: string | null }[];
   onUndo: (at: string, itemCount: number, units: number) => void;
+  reloadKey: number;
 }) {
   const [events, setEvents] = useState<FeedEvent[] | null>(null);
   const [error, setError] = useState(false);
@@ -1274,7 +1281,7 @@ function HistoryFeed({
       .then((d) => { if (alive) { setEvents(d.rows); setHasMore(d.hasMore); } })
       .catch(() => alive && setError(true));
     return () => { alive = false; };
-  }, [query, page]);
+  }, [query, page, reloadKey]);
 
   const groups = events ? groupFeed(events) : [];
 
