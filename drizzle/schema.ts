@@ -37,4 +37,8 @@ export const events = pgTable("events", {
   note: text("note"),          // free-text reason, e.g. why stock was removed ("used", "wasted")
   actor: text("actor"),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  // Set on the lines that undo an HAA order: the `at` timestamp every line of that order
+  // shares. Null on everything else. Makes "already undone?" an exact lookup rather than a
+  // guess from matching notes, so an order can never be handed back twice.
+  reversesAt: timestamp("reverses_at", { withTimezone: true }),
 });
