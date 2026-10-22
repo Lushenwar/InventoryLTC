@@ -25,7 +25,6 @@ const HEADER = [
   "Boxes on shelf",
   "Unit",
   "Pieces per box",
-  "Total pieces",
   "Expiry date",
   "Status",
   "Days to expiry",
@@ -44,8 +43,7 @@ export async function GET(req: NextRequest) {
 
   const body = rows.map((p) => {
     const s = statusOf(p.expiry, p.needsExpiry, today, p.stock);
-    // Pieces per box is the stored figure for PPE and the one parsed from the name otherwise --
-    // the same rule the Total pieces column on screen uses, so the two agree.
+    // Pieces per box is the stored figure for PPE and the one parsed from the name otherwise.
     const per = p.unitsPerBox ?? packSize(p.name);
     return [
       p.name,
@@ -55,7 +53,6 @@ export async function GET(req: NextRequest) {
       p.stock,
       p.uom,
       per,
-      p.stock * per,
       p.expiry,
       STATUS_META[s.key].label,
       s.days,
