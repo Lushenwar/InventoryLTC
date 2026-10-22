@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { STATUS_META, daysUntil, facilityToday, statusOf, type StatusKey } from "@/lib/expiry";
 import { weekEnd, weekOf, weekStart, weeksInYear } from "@/lib/weeks";
 import { expiryFromMfg, shelfLifeYears } from "@/lib/shelflife";
-import { packSize, receiveBoxes, snapQty } from "@/lib/pack";
+import { receiveBoxes, snapQty } from "@/lib/pack";
 import { clearsShelf } from "@/lib/limits";
 import { withinUndoWindow } from "@/lib/undo";
 import type { Counts, Product } from "@/lib/types";
@@ -495,7 +495,6 @@ export default function InventoryApp({
                 <th className="hide-md" onClick={() => toggleSort("location")}>Location <span className="arr">{sortArrow("location")}</span></th>
                 <th className="hide-md" onClick={() => toggleSort("category")}>Category <span className="arr">{sortArrow("category")}</span></th>
                 <th onClick={() => toggleSort("stock")}>Boxes on shelf <span className="arr">{sortArrow("stock")}</span></th>
-                <th className="no-sort">Total pieces</th>
                 <th onClick={() => toggleSort("expiry")}>Expiry status <span className="arr">{sortArrow("expiry")}</span></th>
                 <th className="no-sort" style={{ textAlign: "right" }}>Actions</th>
               </tr>
@@ -527,12 +526,6 @@ export default function InventoryApp({
                       <span className={`stockcell num ${stock === 0 ? "zero" : ""}`}>
                         {stock.toLocaleString()}
                         <span className="u">{it.uom}</span>
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`stockcell num ${stock === 0 ? "zero" : ""}`}>
-                        {(stock * (it.unitsPerBox ?? packSize(it.name))).toLocaleString()}
-                        <span className="u">pcs</span>
                       </span>
                     </td>
                     <td>
